@@ -28,6 +28,28 @@ const QUICK_PROMPTS = [
   'Can you find movies for 5pm tomorrow?',
 ];
 
+type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+};
+
+async function mockSendMessageToChatbot(userMessage: string): Promise<string> {
+  await new Promise((resolve) => setTimeout(resolve, 900));
+
+  const normalizedMessage = userMessage.toLowerCase();
+
+  if (normalizedMessage.includes('book')) {
+    return 'I can help with booking that. Once the backend API is connected, I will validate the show, seat availability, and move this request forward.';
+  }
+
+  if (normalizedMessage.includes('movie') || normalizedMessage.includes('show')) {
+    return 'I can search movies and showtimes for you. Once the backend is wired up, this response will come directly from the API.';
+  }
+
+  return 'I received your message. This is a mocked chatbot response for now, and we can replace it with the real backend integration next.';
+}
+
 function PromptCard({
   label,
   onPress,
@@ -45,25 +67,63 @@ function PromptCard({
 export default function HomeScreen() {
   const [prompt, setPrompt] = useState('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isSending, setIsSending] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const chatScrollRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
   const keyboardOffset = useRef(new Animated.Value(0)).current;
+
+  const scrollChatToEnd = () => {
+    requestAnimationFrame(() => {
+      chatScrollRef.current?.scrollToEnd({ animated: true });
+    });
+  };
 
   const handleSuggestionPress = (suggestion: string) => {
     setPrompt(suggestion);
     inputRef.current?.focus();
   };
 
-  const handlePromptSubmit = () => {
+  const handlePromptSubmit = async () => {
     const trimmedPrompt = prompt.trim();
 
-    if (!trimmedPrompt) {
+    if (!trimmedPrompt || isSending) {
       inputRef.current?.focus();
       return;
     }
 
-    // Replace this with your API call when the backend is ready.
-    console.log('Submit prompt:', trimmedPrompt);
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      text: trimmedPrompt,
+    };
+
+    setMessages((currentMessages) => [...currentMessages, userMessage]);
+    setPrompt('');
+    setIsSending(true);
+    scrollChatToEnd();
+
+    try {
+      const assistantResponse = await mockSendMessageToChatbot(trimmedPrompt);
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        text: assistantResponse,
+      };
+
+      setMessages((currentMessages) => [...currentMessages, assistantMessage]);
+    } catch {
+      const errorMessage: ChatMessage = {
+        id: `assistant-error-${Date.now()}`,
+        role: 'assistant',
+        text: 'Something went wrong while getting the response. Once the real API is connected, we can show a better retry state here.',
+      };
+
+      setMessages((currentMessages) => [...currentMessages, errorMessage]);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   useEffect(() => {
@@ -99,6 +159,12 @@ export default function HomeScreen() {
     };
   }, [insets.bottom, keyboardOffset]);
 
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollChatToEnd();
+    }
+  }, [messages]);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar style="light" />
@@ -112,33 +178,64 @@ export default function HomeScreen() {
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
           style={styles.background}>
-          <View style={[styles.content, { paddingBottom: 108 + insets.bottom }]}>
+          <ScrollView
+            ref={chatScrollRef}
+            style={styles.content}
+            contentContainerStyle={[styles.contentContainer, { paddingBottom: 108 + insets.bottom }]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}>
             <Image
               source={{ uri: BRAND_LOGO_URI }}
               contentFit="contain"
               style={styles.logo}
             />
 
-            <View style={styles.heroSection}>
-              <Text style={styles.heroTitle}>Booking movies made easy.</Text>
-              <Image
-                source={{ uri: POPCORN_URI }}
-                contentFit="contain"
-                style={styles.popcorn}
-              />
-            </View>
-
-            {!isKeyboardVisible ? (
-              <View style={styles.trySection}>
-                <Text style={styles.sectionTitle}>Try these</Text>
-                <View style={styles.promptList}>
-                  {QUICK_PROMPTS.map((prompt) => (
-                    <PromptCard key={prompt} label={prompt} onPress={handleSuggestionPress} />
-                  ))}
+            {messages.length === 0 ? (
+              <>
+                <View style={styles.heroSection}>
+                  <Text style={styles.heroTitle}>Booking movies made easy.</Text>
+                  <Image
+                    source={{ uri: POPCORN_URI }}
+                    contentFit="contain"
+                    style={styles.popcorn}
+                  />
                 </View>
+
+                {!isKeyboardVisible ? (
+                  <View style={styles.trySection}>
+                    <Text style={styles.sectionTitle}>Try these</Text>
+                    <View style={styles.promptList}>
+                      {QUICK_PROMPTS.map((quickPrompt) => (
+                        <PromptCard
+                          key={quickPrompt}
+                          label={quickPrompt}
+                          onPress={handleSuggestionPress}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <View style={styles.chatMessages}>
+                {messages.map((message) => (
+                  <View
+                    key={message.id}
+                    style={[
+                      styles.messageBubble,
+                      message.role === 'user' ? styles.userMessageBubble : styles.assistantMessageBubble,
+                    ]}>
+                    <Text style={styles.messageText}>{message.text}</Text>
+                  </View>
+                ))}
+                {isSending ? (
+                  <View style={[styles.messageBubble, styles.assistantMessageBubble]}>
+                    <Text style={styles.messageText}>Typing...</Text>
+                  </View>
+                ) : null}
               </View>
-            ) : null}
-          </View>
+            )}
+          </ScrollView>
 
           <Animated.View
             style={[
@@ -175,20 +272,26 @@ export default function HomeScreen() {
                 onChangeText={setPrompt}
                 placeholder="Ask anything"
                 placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                style={styles.input}
-                selectionColor="#FFFFFF"
-                autoCapitalize="sentences"
-                autoCorrect
-                returnKeyType="send"
-                onSubmitEditing={handlePromptSubmit}
+              style={styles.input}
+              selectionColor="#FFFFFF"
+              autoCapitalize="sentences"
+              autoCorrect
+              returnKeyType="send"
+              onSubmitEditing={handlePromptSubmit}
+              editable={!isSending}
               />
               <Pressable
                 onPress={handlePromptSubmit}
                 hitSlop={8}
                 style={styles.submitButton}
                 accessibilityRole="button"
-                accessibilityLabel="Submit prompt">
-                <MaterialIcons name="arrow-upward" size={24} color="#FFFFFF" />
+                accessibilityLabel="Submit prompt"
+                disabled={isSending}>
+                <MaterialIcons
+                  name={isSending ? 'hourglass-empty' : 'arrow-upward'}
+                  size={24}
+                  color="#FFFFFF"
+                />
               </Pressable>
             </View>
           </Animated.View>
@@ -213,6 +316,8 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
     paddingHorizontal: 20,
   },
   logo: {
@@ -244,6 +349,32 @@ const styles = StyleSheet.create({
   },
   trySection: {
     marginTop: 112,
+  },
+  chatMessages: {
+    gap: 14,
+    paddingTop: 32,
+  },
+  messageBubble: {
+    maxWidth: '90%',
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+  },
+  userMessageBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: 'rgba(194, 192, 192, 0.24)',
+    marginLeft: 28,
+  },
+  assistantMessageBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(71, 71, 71, 0.36)',
+    marginRight: 28,
+  },
+  messageText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '400',
   },
   sectionTitle: {
     color: '#FFFFFF',
