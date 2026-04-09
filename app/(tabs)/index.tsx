@@ -5,12 +5,13 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  KeyboardAvoidingView,
   Easing,
   Keyboard,
+  KeyboardAvoidingView,
   KeyboardEvent,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -43,6 +44,7 @@ function PromptCard({
 
 export default function HomeScreen() {
   const [prompt, setPrompt] = useState('');
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
   const keyboardOffset = useRef(new Animated.Value(0)).current;
@@ -79,10 +81,12 @@ export default function HomeScreen() {
 
     const handleKeyboardShow = (event: KeyboardEvent) => {
       const keyboardHeight = Math.max(0, event.endCoordinates.height - insets.bottom);
+      setIsKeyboardVisible(true);
       animateInputBar(keyboardHeight, event.duration);
     };
 
     const handleKeyboardHide = (event: KeyboardEvent) => {
+      setIsKeyboardVisible(false);
       animateInputBar(0, event.duration);
     };
 
@@ -124,14 +128,16 @@ export default function HomeScreen() {
               />
             </View>
 
-            <View style={styles.trySection}>
-              <Text style={styles.sectionTitle}>Try these</Text>
-              <View style={styles.promptList}>
-                {QUICK_PROMPTS.map((prompt) => (
-                  <PromptCard key={prompt} label={prompt} onPress={handleSuggestionPress} />
-                ))}
+            {!isKeyboardVisible ? (
+              <View style={styles.trySection}>
+                <Text style={styles.sectionTitle}>Try these</Text>
+                <View style={styles.promptList}>
+                  {QUICK_PROMPTS.map((prompt) => (
+                    <PromptCard key={prompt} label={prompt} onPress={handleSuggestionPress} />
+                  ))}
+                </View>
               </View>
-            </View>
+            ) : null}
           </View>
 
           <Animated.View
@@ -142,6 +148,26 @@ export default function HomeScreen() {
                 paddingBottom: Math.max(insets.bottom, 20),
               },
             ]}>
+            {isKeyboardVisible ? (
+              <View style={styles.suggestionTray}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.suggestionTrayContent}
+                  keyboardShouldPersistTaps="handled">
+                  {QUICK_PROMPTS.map((suggestion) => (
+                    <Pressable
+                      key={suggestion}
+                      style={styles.suggestionPill}
+                      onPress={() => handleSuggestionPress(suggestion)}>
+                      <Text numberOfLines={1} style={styles.suggestionPillText}>
+                        {suggestion}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
             <View style={styles.inputBar}>
               <TextInput
                 ref={inputRef}
@@ -250,6 +276,33 @@ const styles = StyleSheet.create({
     bottom: 0,
     paddingHorizontal: 22,
     paddingTop: 12,
+  },
+  suggestionTray: {
+    marginBottom: 12,
+    marginHorizontal: -2,
+  },
+  suggestionTrayContent: {
+    paddingHorizontal: 2,
+    gap: 12,
+  },
+  suggestionPill: {
+    maxWidth: 284,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: 'rgba(194, 192, 192, 0.24)',
+    paddingHorizontal: 18,
+    justifyContent: 'center',
+    shadowColor: '#1E002D',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 3,
+  },
+  suggestionPillText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '400',
   },
   inputBar: {
     minHeight: 48,
