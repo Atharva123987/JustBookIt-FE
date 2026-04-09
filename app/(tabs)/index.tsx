@@ -1,14 +1,13 @@
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
-  Easing,
   Keyboard,
-  KeyboardAvoidingView,
   KeyboardEvent,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -19,60 +18,29 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AssistantBubble, IntentAttachment, PromptCard, UserBubble } from '@/components/chat/cards';
+import { QUICK_PROMPTS } from '@/components/chat/constants';
+import { ChatAttachment, ChatContext, ChatMessage, PaymentMethod, ShowWithFormat } from '@/components/chat/types';
+import { AIQueryRequest, AIQueryResponse, BookingData, MovieSummary, queryAI } from '@/services/ai-chat';
+
 const BRAND_LOGO_URI = 'https://www.figma.com/api/mcp/asset/8be43ba6-5705-4185-b766-84282531fa74';
 const POPCORN_URI = 'https://www.figma.com/api/mcp/asset/9b4dcddc-da37-408b-ba70-0961d9731156';
-
-const QUICK_PROMPTS = [
-  'Book Dhurandhar 8pm show at Inorbit',
-  'Show me movies running at my locality',
-  'Can you find movies for 5pm tomorrow?',
-];
-
-type ChatMessage = {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-};
-
-async function mockSendMessageToChatbot(userMessage: string): Promise<string> {
-  await new Promise((resolve) => setTimeout(resolve, 900));
-
-  const normalizedMessage = userMessage.toLowerCase();
-
-  if (normalizedMessage.includes('book')) {
-    return 'I can help with booking that. Once the backend API is connected, I will validate the show, seat availability, and move this request forward.';
-  }
-
-  if (normalizedMessage.includes('movie') || normalizedMessage.includes('show')) {
-    return 'I can search movies and showtimes for you. Once the backend is wired up, this response will come directly from the API.';
-  }
-
-  return 'I received your message. This is a mocked chatbot response for now, and we can replace it with the real backend integration next.';
-}
-
-function PromptCard({
-  label,
-  onPress,
-}: {
-  label: string;
-  onPress: (label: string) => void;
-}) {
-  return (
-    <Pressable style={styles.promptCard} onPress={() => onPress(label)}>
-      <Text style={styles.promptText}>{label}</Text>
-    </Pressable>
-  );
-}
 
 export default function HomeScreen() {
   const [prompt, setPrompt] = useState('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [chatContext, setChatContext] = useState<ChatContext>({});
   const inputRef = useRef<TextInput>(null);
   const chatScrollRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
   const keyboardOffset = useRef(new Animated.Value(0)).current;
+
+  const visibleQuickPrompts = useMemo(
+    () => QUICK_PROMPTS.filter((item) => item !== prompt),
+    [prompt]
+  );
 
   const scrollChatToEnd = () => {
     requestAnimationFrame(() => {
@@ -80,15 +48,69 @@ export default function HomeScreen() {
     });
   };
 
+  const appendAssistantResponse = (response: AIQueryResponse) => {
+    let attachment: ChatAttachment | undefined;
+
+    switch (response.intent) {
+      case 'search_all_movies':
+        attachment = { intent: response.intent, data: response.api_data };
+        break;
+      case 'movie_show_timetable':
+        attachment = { intent: response.intent, data: response.api_data };
+        break;
+      case 'query_seat_availability':
+        attachment = { intent: response.intent, data: response.api_data };
+        break;
+      case 'book_movie':
+        attachment = { intent: response.intent, data: response.api_data };
+        break;
+      case 'get_booking':
+        attachment = { intent: response.intent, data: response.api_data };
+        break;
+    }
+
+    if (!attachment && (response.intent != 'unknown' ||  'unsupported_feature' || 'small_talk') )   {
+      throw new Error('Unsupported assistant response attachment.');
+    }
+
+    const assistantMessage: ChatMessage = {
+      id: `assistant-${Date.now()}`,
+      role: 'assistant',
+      text: response.chat_response,
+      attachment,
+    };
+
+    setMessages((currentMessages) => [...currentMessages, assistantMessage]);
+
+    if (response.intent === 'movie_show_timetable') {
+      setChatContext((currentContext) => ({
+        ...currentContext,
+        selectedMovieId: response.api_data.movie_details.data.movie.id,
+      }));
+    }
+
+    if (response.intent === 'book_movie' || response.intent === 'get_booking') {
+      setChatContext((currentContext) => ({
+        ...currentContext,
+        bookingId: response.api_data.data.booking_id,
+        selectedShowId: response.api_data.data.show_id,
+      }));
+    }
+  };
+
   const handleSuggestionPress = (suggestion: string) => {
     setPrompt(suggestion);
     inputRef.current?.focus();
   };
 
-  const handlePromptSubmit = async () => {
-    const trimmedPrompt = prompt.trim();
+  const sendQuery = async (
+    query: string,
+    overrides?: Partial<AIQueryRequest>,
+    userVisibleMessage?: string
+  ) => {
+    const trimmedQuery = query.trim();
 
-    if (!trimmedPrompt || isSending) {
+    if (!trimmedQuery || isSending) {
       inputRef.current?.focus();
       return;
     }
@@ -96,34 +118,111 @@ export default function HomeScreen() {
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      text: trimmedPrompt,
+      text: userVisibleMessage ?? trimmedQuery,
     };
 
     setMessages((currentMessages) => [...currentMessages, userMessage]);
     setPrompt('');
     setIsSending(true);
-    scrollChatToEnd();
 
     try {
-      const assistantResponse = await mockSendMessageToChatbot(trimmedPrompt);
-      const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        text: assistantResponse,
-      };
+      const response = await queryAI({
+        q: trimmedQuery,
+        movieId: overrides?.movieId ?? chatContext.selectedMovieId,
+        showId: overrides?.showId ?? chatContext.selectedShowId,
+        bookingId: overrides?.bookingId ?? chatContext.bookingId,
+      });
 
-      setMessages((currentMessages) => [...currentMessages, assistantMessage]);
-    } catch {
-      const errorMessage: ChatMessage = {
-        id: `assistant-error-${Date.now()}`,
-        role: 'assistant',
-        text: 'Something went wrong while getting the response. Once the real API is connected, we can show a better retry state here.',
-      };
+      appendAssistantResponse(response);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unable to get a response from the chatbot.';
 
-      setMessages((currentMessages) => [...currentMessages, errorMessage]);
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: `assistant-error-${Date.now()}`,
+          role: 'assistant',
+          text: 'Something went wrong while processing that request.',
+        },
+      ]);
+      Alert.alert('Chat Error', errorMessage);
     } finally {
       setIsSending(false);
     }
+  };
+
+  const handlePromptSubmit = async () => {
+    await sendQuery(prompt);
+  };
+
+  const handleMoviePress = async (movie: MovieSummary) => {
+    setChatContext((currentContext) => ({
+      ...currentContext,
+      selectedMovieId: movie.id,
+    }));
+    await sendQuery('show movie timetable', { movieId: movie.id }, movie.title);
+  };
+
+  const handleShowPress = (show: ShowWithFormat) => {
+    setChatContext((currentContext) => ({
+      ...currentContext,
+      selectedShowId: show.id,
+      pendingShow: show,
+    }));
+
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        id: `assistant-seat-selection-${Date.now()}`,
+        role: 'assistant',
+        text: 'Select the number of seats for this show.',
+        attachment: {
+          intent: 'seat_selection',
+          data: { show },
+        },
+      },
+    ]);
+  };
+
+  const handleSeatCountPress = async (seatCount: number, show: ShowWithFormat) => {
+    setChatContext((currentContext) => ({
+      ...currentContext,
+      selectedShowId: show.id,
+      pendingShow: undefined,
+    }));
+
+    await sendQuery(
+      `${seatCount} seats`,
+      { showId: show.id, movieId: show.movie_id },
+      `${seatCount} seats`
+    );
+  };
+
+  const handlePaymentMethodSelect = (method: PaymentMethod) => {
+    setChatContext((currentContext) => ({
+      ...currentContext,
+      selectedPaymentMethod: method,
+    }));
+  };
+
+  const handlePaymentPress = async (booking: BookingData, method: PaymentMethod) => {
+    setChatContext((currentContext) => ({
+      ...currentContext,
+      bookingId: booking.booking_id,
+      selectedShowId: booking.show_id,
+      selectedPaymentMethod: method,
+    }));
+
+    if (booking.payment_link) {
+      await Linking.openURL(booking.payment_link);
+    }
+
+    await sendQuery(
+      'get my booking',
+      { bookingId: booking.booking_id, showId: booking.show_id },
+      'Get my booking'
+    );
   };
 
   useEffect(() => {
@@ -134,7 +233,6 @@ export default function HomeScreen() {
       Animated.timing(keyboardOffset, {
         toValue,
         duration: duration ?? 220,
-        easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }).start();
     };
@@ -160,118 +258,112 @@ export default function HomeScreen() {
   }, [insets.bottom, keyboardOffset]);
 
   useEffect(() => {
-    if (messages.length > 0) {
+    if (messages.length > 0 || isSending) {
       scrollChatToEnd();
     }
-  }, [messages]);
+  }, [messages, isSending]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar style="light" />
-      <KeyboardAvoidingView
-        style={styles.keyboardAvoidingView}
-        behavior={undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}>
-        <LinearGradient
-          colors={['#4D007A', '#5E0493', '#7300B6']}
-          locations={[0.08, 0.55, 1]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.background}>
-          <ScrollView
-            ref={chatScrollRef}
-            style={styles.content}
-            contentContainerStyle={[styles.contentContainer, { paddingBottom: 108 + insets.bottom }]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}>
-            <Image
-              source={{ uri: BRAND_LOGO_URI }}
-              contentFit="contain"
-              style={styles.logo}
-            />
+      <LinearGradient
+        colors={['#4D007A', '#5E0493', '#7300B6']}
+        locations={[0.08, 0.55, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.background}>
+        <ScrollView
+          ref={chatScrollRef}
+          style={styles.content}
+          contentContainerStyle={[styles.contentContainer, { paddingBottom: 120 + insets.bottom }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
+          <Image source={{ uri: BRAND_LOGO_URI }} contentFit="contain" style={styles.logo} />
 
-            {messages.length === 0 ? (
-              <>
-                <View style={styles.heroSection}>
-                  <Text style={styles.heroTitle}>Booking movies made easy.</Text>
-                  <Image
-                    source={{ uri: POPCORN_URI }}
-                    contentFit="contain"
-                    style={styles.popcorn}
-                  />
+          {messages.length === 0 ? (
+            <>
+              <View style={styles.heroSection}>
+                <Text style={styles.heroTitle}>Booking movies made easy.</Text>
+                <Image source={{ uri: POPCORN_URI }} contentFit="contain" style={styles.popcorn} />
+              </View>
+
+              {!isKeyboardVisible ? (
+                <View style={styles.trySection}>
+                  <Text style={styles.sectionTitle}>Try these</Text>
+                  <View style={styles.promptList}>
+                    {QUICK_PROMPTS.map((quickPrompt) => (
+                      <PromptCard key={quickPrompt} label={quickPrompt} onPress={handleSuggestionPress} />
+                    ))}
+                  </View>
                 </View>
-
-                {!isKeyboardVisible ? (
-                  <View style={styles.trySection}>
-                    <Text style={styles.sectionTitle}>Try these</Text>
-                    <View style={styles.promptList}>
-                      {QUICK_PROMPTS.map((quickPrompt) => (
-                        <PromptCard
-                          key={quickPrompt}
-                          label={quickPrompt}
-                          onPress={handleSuggestionPress}
+              ) : null}
+            </>
+          ) : (
+            <View style={styles.chatMessages}>
+              {messages.map((message) => (
+                <View key={message.id} style={styles.messageBlock}>
+                  {message.role === 'user' ? (
+                    <UserBubble text={message.text} />
+                  ) : (
+                    <>
+                      <AssistantBubble text={message.text} />
+                      {message.attachment ? (
+                        <IntentAttachment
+                          attachment={message.attachment}
+                          selectedPaymentMethod={chatContext.selectedPaymentMethod}
+                          onMoviePress={handleMoviePress}
+                          onShowPress={handleShowPress}
+                          onSeatCountPress={handleSeatCountPress}
+                          onPaymentMethodSelect={handlePaymentMethodSelect}
+                          onPaymentPress={handlePaymentPress}
                         />
-                      ))}
-                    </View>
-                  </View>
-                ) : null}
-              </>
-            ) : (
-              <View style={styles.chatMessages}>
-                {messages.map((message) => (
-                  <View
-                    key={message.id}
-                    style={[
-                      styles.messageBubble,
-                      message.role === 'user' ? styles.userMessageBubble : styles.assistantMessageBubble,
-                    ]}>
-                    <Text style={styles.messageText}>{message.text}</Text>
-                  </View>
-                ))}
-                {isSending ? (
-                  <View style={[styles.messageBubble, styles.assistantMessageBubble]}>
-                    <Text style={styles.messageText}>Typing...</Text>
-                  </View>
-                ) : null}
-              </View>
-            )}
-          </ScrollView>
+                      ) : null}
+                    </>
+                  )}
+                </View>
+              ))}
 
-          <Animated.View
-            style={[
-              styles.inputBarWrapper,
-              {
-                bottom: keyboardOffset,
-                paddingBottom: Math.max(insets.bottom, 20),
-              },
-            ]}>
-            {isKeyboardVisible ? (
-              <View style={styles.suggestionTray}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.suggestionTrayContent}
-                  keyboardShouldPersistTaps="handled">
-                  {QUICK_PROMPTS.map((suggestion) => (
-                    <Pressable
-                      key={suggestion}
-                      style={styles.suggestionPill}
-                      onPress={() => handleSuggestionPress(suggestion)}>
-                      <Text numberOfLines={1} style={styles.suggestionPillText}>
-                        {suggestion}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            ) : null}
-            <View style={styles.inputBar}>
-              <TextInput
-                ref={inputRef}
-                value={prompt}
-                onChangeText={setPrompt}
-                placeholder="Ask anything"
-                placeholderTextColor="rgba(255, 255, 255, 0.5)"
+              {isSending ? <AssistantBubble text="Typing..." /> : null}
+            </View>
+          )}
+        </ScrollView>
+
+        <Animated.View
+          style={[
+            styles.inputBarWrapper,
+            {
+              bottom: keyboardOffset,
+              paddingBottom: Math.max(insets.bottom, 20),
+            },
+          ]}>
+          {isKeyboardVisible && visibleQuickPrompts.length > 0 ? (
+            <View style={styles.suggestionTray}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.suggestionTrayContent}
+                keyboardShouldPersistTaps="handled">
+                {visibleQuickPrompts.map((suggestion) => (
+                  <Pressable
+                    key={suggestion}
+                    style={styles.suggestionPill}
+                    onPress={() => handleSuggestionPress(suggestion)}>
+                    <Text numberOfLines={1} style={styles.suggestionPillText}>
+                      {suggestion}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          <View style={styles.inputBar}>
+            <TextInput
+              ref={inputRef}
+              value={prompt}
+              onChangeText={setPrompt}
+              placeholder="Ask anything"
+              placeholderTextColor="rgba(255, 255, 255, 0.5)"
               style={styles.input}
               selectionColor="#FFFFFF"
               autoCapitalize="sentences"
@@ -279,34 +371,25 @@ export default function HomeScreen() {
               returnKeyType="send"
               onSubmitEditing={handlePromptSubmit}
               editable={!isSending}
-              />
-              <Pressable
-                onPress={handlePromptSubmit}
-                hitSlop={8}
-                style={styles.submitButton}
-                accessibilityRole="button"
-                accessibilityLabel="Submit prompt"
-                disabled={isSending}>
-                <MaterialIcons
-                  name={isSending ? 'hourglass-empty' : 'arrow-upward'}
-                  size={24}
-                  color="#FFFFFF"
-                />
-              </Pressable>
-            </View>
-          </Animated.View>
-        </LinearGradient>
-      </KeyboardAvoidingView>
+            />
+            <Pressable
+              onPress={handlePromptSubmit}
+              hitSlop={8}
+              style={styles.submitButton}
+              accessibilityRole="button"
+              accessibilityLabel="Submit prompt"
+              disabled={isSending}>
+              <Text style={styles.submitIcon}>{isSending ? '...' : '↑'}</Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+      </LinearGradient>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
-    flex: 1,
-    backgroundColor: '#7300B6',
-  },
-  keyboardAvoidingView: {
     flex: 1,
     backgroundColor: '#7300B6',
   },
@@ -350,32 +433,6 @@ const styles = StyleSheet.create({
   trySection: {
     marginTop: 112,
   },
-  chatMessages: {
-    gap: 14,
-    paddingTop: 32,
-  },
-  messageBubble: {
-    maxWidth: '90%',
-    borderRadius: 16,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-  },
-  userMessageBubble: {
-    alignSelf: 'flex-end',
-    backgroundColor: 'rgba(194, 192, 192, 0.24)',
-    marginLeft: 28,
-  },
-  assistantMessageBubble: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(71, 71, 71, 0.36)',
-    marginRight: 28,
-  },
-  messageText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '400',
-  },
   sectionTitle: {
     color: '#FFFFFF',
     fontSize: 24,
@@ -387,18 +444,12 @@ const styles = StyleSheet.create({
     gap: 20,
     marginTop: 24,
   },
-  promptCard: {
-    minHeight: 53,
-    borderRadius: 15,
-    backgroundColor: 'rgba(194, 192, 192, 0.24)',
-    justifyContent: 'center',
-    paddingHorizontal: 22,
+  chatMessages: {
+    paddingTop: 28,
+    gap: 18,
   },
-  promptText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    lineHeight: 21,
-    fontWeight: '400',
+  messageBlock: {
+    gap: 10,
   },
   inputBarWrapper: {
     position: 'absolute',
@@ -459,5 +510,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  submitIcon: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    lineHeight: 24,
+    fontWeight: '700',
   },
 });
