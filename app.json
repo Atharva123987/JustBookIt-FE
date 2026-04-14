@@ -12,6 +12,9 @@
       "supportsTablet": true
     },
     "android": {
+      "permissions": [
+        "INTERNET"
+      ],
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -48,6 +51,7 @@
     },
     "extra": {
       "router": {},
+      "apiUrl": "https://movie-booking-ai-agent.vercel.app",
       "eas": {
         "projectId": "5b5e6cdd-6704-4297-bd50-1710e563b7f4"
       }

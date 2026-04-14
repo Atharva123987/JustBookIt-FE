@@ -46,6 +46,7 @@ export default function PaymentSuccessScreen() {
       }
 
       try {
+        console.log("🔥 Calling queryAI");
         const response: AIQueryResponse = await queryAI({
           q: 'get my booking',
           bookingId: resolvedBookingId,

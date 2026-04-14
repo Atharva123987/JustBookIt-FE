@@ -299,8 +299,7 @@ function extractHostCandidate(value?: string | null) {
 }
 
 function resolveApiBaseUrl() {
-  const configuredBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
-
+const configuredBaseUrl = Constants.expoConfig?.extra?.apiUrl;
   if (configuredBaseUrl) {
     return configuredBaseUrl.replace(/\/$/, '');
   }
@@ -412,12 +411,12 @@ function normalizeShowTiming(show: RawShowTiming): ShowTiming {
 function normalizeShowVenue(venue: RawShowVenue): ShowVenue {
   const normalizedShowsSource = Array.isArray(venue.shows)
     ? venue.shows.reduce<Record<string, RawShowTiming[]>>((accumulator, showGroup) => {
-        Object.entries(showGroup).forEach(([format, shows]) => {
-          accumulator[format] = [...(accumulator[format] ?? []), ...(Array.isArray(shows) ? shows : [])];
-        });
+      Object.entries(showGroup).forEach(([format, shows]) => {
+        accumulator[format] = [...(accumulator[format] ?? []), ...(Array.isArray(shows) ? shows : [])];
+      });
 
-        return accumulator;
-      }, {})
+      return accumulator;
+    }, {})
     : venue.shows;
 
   return {
@@ -504,9 +503,12 @@ export async function queryAI(request: AIQueryRequest): Promise<AIQueryResponse>
   const { url, options, body, baseUrl } = buildAIRequest(request);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
+  console.log('[AI API] 🌐 FINAL URL:', url);
+  console.log('[AI API] 🌐 METHOD:', options.method);
+  const configuredBaseUrl = Constants.expoConfig?.extra?.apiUrl;
+console.log("BASE URL:", configuredBaseUrl);
   console.log('[AI API] Request:', {
-    configuredBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? null,
+    configuredBaseUrl: configuredBaseUrl ?? null,
     baseUrl,
     url,
     method: options.method,
@@ -522,7 +524,11 @@ export async function queryAI(request: AIQueryRequest): Promise<AIQueryResponse>
       ...options,
       signal: controller.signal,
     });
+    console.log('[AI API] ✅ RESPONSE RECEIVED');
+
     const responseText = await response.text();
+    console.log('[AI API] 📦 STATUS:', response.status);
+    console.log('[AI API] 📦 BODY:', responseText);
 
     console.log('[AI API] Raw Response:', {
       status: response.status,
@@ -548,7 +554,12 @@ export async function queryAI(request: AIQueryRequest): Promise<AIQueryResponse>
 
     return normalizedResponse;
   } catch (error) {
+
     if (error instanceof Error && error.name === 'AbortError') {
+      console.log('[AI API] ❌ ERROR NAME:', error?.name);
+      console.log('[AI API] ❌ ERROR MESSAGE:', error?.message);
+      console.log('[AI API] ❌ ERROR FULL:', JSON.stringify(error));
+
       console.log('[AI API] Request timed out before a response was received.');
       throw new Error(
         `AI API request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds. Check that the backend is reachable from this device.`

@@ -124,7 +124,7 @@ export default function HomeScreen() {
     setMessages((currentMessages) => [...currentMessages, userMessage]);
     setPrompt('');
     setIsSending(true);
-
+console.log("🔥 Calling queryAI");
     try {
       const response = await queryAI({
         q: trimmedQuery,
