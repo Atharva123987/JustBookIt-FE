@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 
 const AUTH_TOKEN = 'test';
 const DEFAULT_PORT = '3000';
-const LOCALHOST_BASE_URL = `http://localhost:${DEFAULT_PORT}`;
+const LOCALHOST_BASE_URL = `https://localhost:${DEFAULT_PORT}`;
 const REQUEST_TIMEOUT_MS = 45000;
 
 export type AIIntent =
