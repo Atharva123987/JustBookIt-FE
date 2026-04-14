@@ -69,7 +69,9 @@ export default function HomeScreen() {
         break;
     }
 
-    if (!attachment && (response.intent != 'unknown' ||  'unsupported_feature' || 'small_talk') )   {
+    if (!attachment && (response.intent !== 'unknown' &&
+      response.intent !== 'unsupported_feature' &&
+      response.intent !== 'small_talk')) {
       throw new Error('Unsupported assistant response attachment.');
     }
 
@@ -124,7 +126,7 @@ export default function HomeScreen() {
     setMessages((currentMessages) => [...currentMessages, userMessage]);
     setPrompt('');
     setIsSending(true);
-console.log("🔥 Calling queryAI");
+    console.log("🔥 Calling queryAI");
     try {
       const response = await queryAI({
         q: trimmedQuery,

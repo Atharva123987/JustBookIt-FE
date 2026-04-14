@@ -448,6 +448,7 @@ function normalizeBooking(data: RawBookingData): BookingData {
 }
 
 function normalizeAIResponse(response: RawAIQueryResponse): AIQueryResponse {
+  console.log("response.intent", response.intent)
   switch (response.intent) {
     case 'search_all_movies':
       return {
