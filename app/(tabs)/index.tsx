@@ -19,7 +19,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AssistantBubble, IntentAttachment, PromptCard, UserBubble } from '@/components/chat/cards';
-import { QUICK_PROMPTS } from '@/components/chat/constants';
+import { PROMPTS_BY_INTENT } from '@/components/chat/constants';
 import { ChatAttachment, ChatContext, ChatMessage, PaymentMethod, ShowWithFormat } from '@/components/chat/types';
 import { AIQueryRequest, AIQueryResponse, BookingData, MovieSummary, queryAI } from '@/services/ai-chat';
 
@@ -36,11 +36,14 @@ export default function HomeScreen() {
   const chatScrollRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
   const keyboardOffset = useRef(new Animated.Value(0)).current;
+  const [lastIntent, setLastIntent] = useState<string | null>(null);
+  const visibleQuickPrompts = useMemo(() => {
+    const prompts =
+      (lastIntent && PROMPTS_BY_INTENT[lastIntent]) ||
+      PROMPTS_BY_INTENT.default;
 
-  const visibleQuickPrompts = useMemo(
-    () => QUICK_PROMPTS.filter((item) => item !== prompt),
-    [prompt]
-  );
+    return prompts.filter((item) => item !== prompt);
+  }, [prompt, lastIntent]);
 
   const scrollChatToEnd = () => {
     requestAnimationFrame(() => {
@@ -68,10 +71,15 @@ export default function HomeScreen() {
         attachment = { intent: response.intent, data: response.api_data };
         break;
     }
+    setLastIntent(response.intent);
+    const allowedNoAttachmentIntents = [
+      'unknown',
+      'unsupported_feature',
+      'small_talk',
+      'need_more_info'
+    ];
 
-    if (!attachment && (response.intent !== 'unknown' &&
-      response.intent !== 'unsupported_feature' &&
-      response.intent !== 'small_talk')) {
+    if (!attachment && !allowedNoAttachmentIntents.includes(response.intent)) {
       throw new Error('Unsupported assistant response attachment.');
     }
 
@@ -293,8 +301,12 @@ export default function HomeScreen() {
                 <View style={styles.trySection}>
                   <Text style={styles.sectionTitle}>Try these</Text>
                   <View style={styles.promptList}>
-                    {QUICK_PROMPTS.map((quickPrompt) => (
-                      <PromptCard key={quickPrompt} label={quickPrompt} onPress={handleSuggestionPress} />
+                    {visibleQuickPrompts.map((quickPrompt) => (
+                      <PromptCard
+                        key={quickPrompt}
+                        label={quickPrompt}
+                        onPress={handleSuggestionPress}
+                      />
                     ))}
                   </View>
                 </View>
@@ -471,9 +483,9 @@ const styles = StyleSheet.create({
   },
   suggestionPill: {
     maxWidth: 284,
-    minHeight: 40,
+    minHeight: 35,
     borderRadius: 999,
-    backgroundColor: 'rgba(194, 192, 192, 0.24)',
+    backgroundColor: 'rgba(45, 1, 59, 0.71)',
     paddingHorizontal: 18,
     justifyContent: 'center',
     shadowColor: '#1E002D',
@@ -491,7 +503,7 @@ const styles = StyleSheet.create({
   inputBar: {
     minHeight: 48,
     borderRadius: 25,
-    backgroundColor: 'rgba(71, 71, 71, 0.5)',
+    backgroundColor: 'rgb(68, 0, 88)',
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: 21,

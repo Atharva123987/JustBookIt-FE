@@ -292,14 +292,34 @@ function BookingConfirmationCard({ booking }: { booking: BookingData }) {
   return (
     <View style={styles.confirmationCard}>
       <View style={styles.confirmationHeader}>
-        <MaterialIcons name="check-circle" size={26} color="#6DFF99" />
+        {
+          booking.payment_info.payment_status === "success" ? (
+            <>
+            <MaterialIcons name="check-circle" size={26} color="#6DFF99" />
         <Text style={styles.confirmationTitle}>Booking Confirmed</Text>
+            </>
+          ) : 
+          (
+            <>
+            <MaterialIcons name="error" size={26} color="#f1d900" />
+        <Text style={styles.confirmationTitle}>Booking Pending</Text>
+            </>
+          )
+        }
+        
       </View>
       <Text style={styles.confirmationBookingId}>Booking ID: {booking.booking_id}</Text>
       <View style={styles.ticketCard}>
         <View style={styles.ticketHeaderRow}>
           <Text style={styles.ticketHeaderTitle}>Movie Ticket</Text>
-          <Text style={styles.ticketHeaderStatus}>{booking.status.toUpperCase()}</Text>
+          {
+            booking.status === 'pending'?(
+              <>
+            <Text style={styles.ticketHeaderStatusPending}>{booking.status.toUpperCase()}</Text>
+              </>
+            ):
+            <Text style={styles.ticketHeaderStatusSuccess}>{booking.status.toUpperCase()}</Text>
+          }
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.ticketMetaLabel}>Show</Text>
@@ -910,8 +930,14 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '600',
   },
-  ticketHeaderStatus: {
+  ticketHeaderStatusSuccess: {
     color: '#6DFF99',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  ticketHeaderStatusPending: {
+    color: '#f1d900',
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '700',

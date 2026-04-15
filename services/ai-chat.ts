@@ -179,7 +179,7 @@ type RawShowTiming = {
   show_type: string;
   location_id: string;
   show_timing: string;
-  price_label?: string;
+  price_label?: number;
   payment_amount?: number;
 };
 
@@ -354,7 +354,7 @@ export function buildAIRequest(request: AIQueryRequest) {
   };
 }
 
-function formatCurrency(value: number) {
+function formatCurrency(value?: number) {
   return `\u20B9 ${value}+`;
 }
 
@@ -404,7 +404,7 @@ function normalizeShowTiming(show: RawShowTiming): ShowTiming {
     show_type: show.show_type,
     location_id: show.location_id,
     show_timing: show.show_timing,
-    price_label: show.price_label ?? formatCurrency(paymentAmount),
+    price_label: formatCurrency(show.price_label) ?? formatCurrency(paymentAmount),
   };
 }
 
