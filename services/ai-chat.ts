@@ -360,10 +360,7 @@ export function buildAIRequest(request: AIQueryRequest) {
   if (request.bookingId) {
     body.bookingId = request.bookingId;
   }
-  if (request.deviceId) {
-    body.deviceId = request.deviceId;
-    body.device_id = request.deviceId;
-  }
+  
 
   return {
     url: `${baseUrl}/ai/query?${query.toString()}`,
@@ -372,6 +369,7 @@ export function buildAIRequest(request: AIQueryRequest) {
       headers: {
         Authorization: `Bearer ${AUTH_TOKEN}`,
         'Content-Type': 'application/json',
+        'X-Device-Id': request.deviceId ?? '',
       },
       body: JSON.stringify(body),
     },

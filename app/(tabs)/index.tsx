@@ -27,6 +27,15 @@ import { getOrCreateDeviceId, loadPersistedChatState, persistChatState } from '@
 const BRAND_LOGO_IMAGE = require('../../assets/images/brand-logo.png');
 const POPCORN_IMAGE = require('../../assets/images/popcorn.png');
 
+function resetLaunchSensitiveChatContext(chatContext: ChatContext): ChatContext {
+  return {
+    ...chatContext,
+    selectedMovieId: undefined,
+    selectedShowId: undefined,
+    pendingShow: undefined,
+  };
+}
+
 export default function HomeScreen() {
   const [prompt, setPrompt] = useState('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
@@ -287,8 +296,12 @@ export default function HomeScreen() {
         }
 
         if (persistedState) {
+          const sanitizedChatContext = resetLaunchSensitiveChatContext(
+            persistedState.chatContext ?? {}
+          );
+
           setMessages(persistedState.messages);
-          setChatContext(persistedState.chatContext);
+          setChatContext(sanitizedChatContext);
           setLastIntent(persistedState.lastIntent);
         }
 
