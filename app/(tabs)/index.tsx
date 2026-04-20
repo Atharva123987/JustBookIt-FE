@@ -22,9 +22,10 @@ import { AssistantBubble, IntentAttachment, PromptCard, UserBubble } from '@/com
 import { PROMPTS_BY_INTENT } from '@/components/chat/constants';
 import { ChatAttachment, ChatContext, ChatMessage, PaymentMethod, ShowWithFormat } from '@/components/chat/types';
 import { AIQueryRequest, AIQueryResponse, BookingData, MovieSummary, queryAI } from '@/services/ai-chat';
+import { getOrCreateDeviceId, loadPersistedChatState, persistChatState } from '@/services/chat-storage';
 
-const BRAND_LOGO_URI = 'https://www.figma.com/api/mcp/asset/8be43ba6-5705-4185-b766-84282531fa74';
-const POPCORN_URI = 'https://www.figma.com/api/mcp/asset/9b4dcddc-da37-408b-ba70-0961d9731156';
+const BRAND_LOGO_IMAGE = require('../../assets/images/brand-logo.png');
+const POPCORN_IMAGE = require('../../assets/images/popcorn.png');
 
 export default function HomeScreen() {
   const [prompt, setPrompt] = useState('');
@@ -37,6 +38,8 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const keyboardOffset = useRef(new Animated.Value(0)).current;
   const [lastIntent, setLastIntent] = useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
   const visibleQuickPrompts = useMemo(() => {
     const prompts =
       (lastIntent && PROMPTS_BY_INTENT[lastIntent]) ||
@@ -56,23 +59,38 @@ export default function HomeScreen() {
 
     switch (response.intent) {
       case 'search_all_movies':
-        attachment = { intent: response.intent, data: response.api_data };
+        if (response.api_data.data.movies.length > 0) {
+          attachment = { intent: response.intent, data: response.api_data };
+        }
         break;
       case 'movie_show_timetable':
-        attachment = { intent: response.intent, data: response.api_data };
+        if (response.api_data.show_timings.data.length > 0) {
+          attachment = { intent: response.intent, data: response.api_data };
+        }
         break;
       case 'query_seat_availability':
-        attachment = { intent: response.intent, data: response.api_data };
+        if (typeof response.api_data.available_seats === 'number') {
+          attachment = { intent: response.intent, data: response.api_data };
+        }
         break;
       case 'book_movie':
-        attachment = { intent: response.intent, data: response.api_data };
+        if (response.api_data.data) {
+          attachment = { intent: response.intent, data: response.api_data };
+        }
         break;
       case 'get_booking':
-        attachment = { intent: response.intent, data: response.api_data };
+        if (response.api_data.data) {
+          attachment = { intent: response.intent, data: response.api_data };
+        }
         break;
     }
     setLastIntent(response.intent);
     const allowedNoAttachmentIntents = [
+      'search_all_movies',
+      'movie_show_timetable',
+      'query_seat_availability',
+      'book_movie',
+      'get_booking',
       'unknown',
       'unsupported_feature',
       'small_talk',
@@ -99,11 +117,23 @@ export default function HomeScreen() {
       }));
     }
 
-    if (response.intent === 'book_movie' || response.intent === 'get_booking') {
+    if (response.intent === 'book_movie' && response.api_data.data) {
+      const bookingData = response.api_data.data;
+
       setChatContext((currentContext) => ({
         ...currentContext,
-        bookingId: response.api_data.data.booking_id,
-        selectedShowId: response.api_data.data.show_id,
+        bookingId: bookingData.booking_id,
+        selectedShowId: bookingData.show_id,
+      }));
+    }
+
+    if (response.intent === 'get_booking' && response.api_data.data) {
+      const bookingData = response.api_data.data;
+
+      setChatContext((currentContext) => ({
+        ...currentContext,
+        bookingId: bookingData.booking_id,
+        selectedShowId: bookingData.show_id,
       }));
     }
   };
@@ -136,11 +166,18 @@ export default function HomeScreen() {
     setIsSending(true);
     console.log("🔥 Calling queryAI");
     try {
+      const resolvedDeviceId = deviceId ?? (await getOrCreateDeviceId());
+
+      if (!deviceId) {
+        setDeviceId(resolvedDeviceId);
+      }
+
       const response = await queryAI({
         q: trimmedQuery,
         movieId: overrides?.movieId ?? chatContext.selectedMovieId,
         showId: overrides?.showId ?? chatContext.selectedShowId,
         bookingId: overrides?.bookingId ?? chatContext.bookingId,
+        deviceId: overrides?.deviceId ?? resolvedDeviceId,
       });
 
       appendAssistantResponse(response);
@@ -236,6 +273,57 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
+    let isMounted = true;
+
+    const hydrateChat = async () => {
+      try {
+        const [persistedState, persistedDeviceId] = await Promise.all([
+          loadPersistedChatState(),
+          getOrCreateDeviceId(),
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (persistedState) {
+          setMessages(persistedState.messages);
+          setChatContext(persistedState.chatContext);
+          setLastIntent(persistedState.lastIntent);
+        }
+
+        setDeviceId(persistedDeviceId);
+      } catch (error) {
+        console.log('[Chat Storage] Failed to hydrate local chat state:', error);
+      } finally {
+        if (isMounted) {
+          setIsHydrated(true);
+        }
+      }
+    };
+
+    hydrateChat();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    persistChatState({
+      messages,
+      chatContext,
+      lastIntent,
+    }).catch((error) => {
+      console.log('[Chat Storage] Failed to persist local chat state:', error);
+    });
+  }, [chatContext, isHydrated, lastIntent, messages]);
+
+  useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
@@ -288,13 +376,13 @@ export default function HomeScreen() {
           contentContainerStyle={[styles.contentContainer, { paddingBottom: 120 + insets.bottom }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <Image source={{ uri: BRAND_LOGO_URI }} contentFit="contain" style={styles.logo} />
+          <Image source={BRAND_LOGO_IMAGE} contentFit="contain" style={styles.logo} />
 
           {messages.length === 0 ? (
             <>
               <View style={styles.heroSection}>
                 <Text style={styles.heroTitle}>Booking movies made easy.</Text>
-                <Image source={{ uri: POPCORN_URI }} contentFit="contain" style={styles.popcorn} />
+                <Image source={POPCORN_IMAGE} contentFit="contain" style={styles.popcorn} />
               </View>
 
               {!isKeyboardVisible ? (

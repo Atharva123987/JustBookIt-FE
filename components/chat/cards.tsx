@@ -39,25 +39,6 @@ function GradientText({
   );
 }
 
-function UPILogo({ selected }: { selected: boolean }) {
-  return (
-    <View style={styles.logoWrap}>
-      <View style={styles.upiLogoRow}>
-        <Text style={[styles.upiBrandText, selected ? styles.upiBrandTextSelected : null]}>
-          UPI
-        </Text>
-        <View style={styles.upiArrowWrap}>
-          <View style={styles.upiArrowOrange} />
-          <View style={styles.upiArrowGreen} />
-        </View>
-      </View>
-      <Text style={[styles.upiTagline, selected ? styles.upiTaglineSelected : null]}>
-        UNIFIED PAYMENTS INTERFACE
-      </Text>
-    </View>
-  );
-}
-
 function StripeLogo({ selected }: { selected: boolean }) {
   return (
     <View style={styles.logoWrap}>
@@ -218,7 +199,7 @@ function PaymentOptionButton({
     <Pressable
       style={[styles.paymentOptionButton, isSelected ? styles.paymentOptionButtonSelected : null]}
       onPress={onPress}>
-      {method === 'upi' ? <UPILogo selected={isSelected} /> : <StripeLogo selected={isSelected} />}
+      <StripeLogo selected={isSelected} />
     </Pressable>
   );
 }
@@ -264,31 +245,32 @@ function BookingSummaryCard({
       </View>
       <View style={styles.paymentOptionsRow}>
         <PaymentOptionButton
-          method="upi"
-          isSelected={selectedPaymentMethod === 'upi'}
-          onPress={() => onPaymentMethodSelect('upi')}
-        />
-        <PaymentOptionButton
           method="stripe"
-          isSelected={selectedPaymentMethod === 'stripe'}
+          isSelected={selectedPaymentMethod === 'stripe' || !selectedPaymentMethod}
           onPress={() => onPaymentMethodSelect('stripe')}
         />
       </View>
       <Pressable
-        style={[styles.primaryAction, !selectedPaymentMethod ? styles.primaryActionDisabled : null]}
-        onPress={() => selectedPaymentMethod && onPayPress(booking, selectedPaymentMethod)}
-        disabled={!selectedPaymentMethod}>
-        <Text style={styles.primaryActionText}>
-          {selectedPaymentMethod
-            ? `Pay with ${selectedPaymentMethod.toUpperCase()}`
-            : 'Choose Payment Option'}
-        </Text>
+        style={styles.primaryAction}
+        onPress={() => onPayPress(booking, 'stripe')}>
+        <Text style={styles.primaryActionText}>Pay with STRIPE</Text>
       </Pressable>
     </View>
   );
 }
 
 function BookingConfirmationCard({ booking }: { booking: BookingData }) {
+  const isConfirmed =
+    booking.status === 'confirmed' || booking.payment_info.payment_status === 'success';
+  const showTimeLabel =
+    typeof booking.show_timing_epoch === 'number'
+      ? new Date(booking.show_timing_epoch * 1000).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })
+      : null;
+
   return (
     <View style={styles.confirmationCard}>
       <View style={styles.confirmationHeader}>
@@ -321,10 +303,31 @@ function BookingConfirmationCard({ booking }: { booking: BookingData }) {
             <Text style={styles.ticketHeaderStatusSuccess}>{booking.status.toUpperCase()}</Text>
           }
         </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.ticketMetaLabel}>Show</Text>
-          <Text style={styles.ticketMetaValue}>{booking.show_id}</Text>
-        </View>
+        {isConfirmed &&
+        (booking.movie_name || booking.movie_poster || showTimeLabel) ? (
+          <View style={styles.confirmedMovieRow}>
+            {booking.movie_poster ? (
+              <Image
+                source={{ uri: booking.movie_poster }}
+                contentFit="cover"
+                style={styles.confirmedMoviePoster}
+              />
+            ) : null}
+            <View style={styles.confirmedMovieInfo}>
+              {booking.movie_name ? (
+                <Text style={styles.confirmedMovieTitle}>{booking.movie_name}</Text>
+              ) : null}
+              {showTimeLabel ? (
+                <Text style={styles.confirmedMovieTime}>{showTimeLabel}</Text>
+              ) : null}
+            </View>
+          </View>
+        ) : (
+          <View style={styles.summaryRow}>
+            <Text style={styles.ticketMetaLabel}>Show</Text>
+            <Text style={styles.ticketMetaValue}>{booking.show_id}</Text>
+          </View>
+        )}
         <View style={styles.summaryRow}>
           <Text style={styles.ticketMetaLabel}>Seats</Text>
           <Text style={styles.ticketMetaValue}>{booking.seat_numbers.join(', ')}</Text>
@@ -436,6 +439,10 @@ export function IntentAttachment({
   }
 
   if (attachment.intent === 'book_movie') {
+    if (!attachment.data.data) {
+      return null;
+    }
+
     return (
       <View style={styles.attachmentBlock}>
         <BookingSummaryCard
@@ -446,6 +453,10 @@ export function IntentAttachment({
         />
       </View>
     );
+  }
+
+  if (!attachment.data.data) {
+    return null;
   }
 
   return (
@@ -795,69 +806,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  upiLogoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  upiBrandText: {
-    color: '#6B6B6B',
-    fontSize: 20,
-    lineHeight: 22,
-    fontStyle: 'italic',
-    fontWeight: '900',
-    letterSpacing: 0.4,
-  },
-  upiBrandTextSelected: {
-    color: '#4F4F4F',
-  },
-  upiArrowWrap: {
-    width: 18,
-    height: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  upiArrowOrange: {
-    position: 'absolute',
-    width: 0,
-    height: 0,
-    borderTopWidth: 8,
-    borderBottomWidth: 8,
-    borderLeftWidth: 0,
-    borderRightWidth: 8,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderRightColor: '#F47C20',
-    right: 2,
-    top: 1,
-    transform: [{ skewY: '-18deg' }],
-  },
-  upiArrowGreen: {
-    position: 'absolute',
-    width: 0,
-    height: 0,
-    borderTopWidth: 8,
-    borderBottomWidth: 8,
-    borderLeftWidth: 8,
-    borderRightWidth: 0,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: '#2DBD6E',
-    right: -1,
-    top: 2,
-    transform: [{ skewY: '18deg' }],
-  },
-  upiTagline: {
-    marginTop: 1,
-    color: '#7B7B7B',
-    fontSize: 6,
-    lineHeight: 8,
-    fontStyle: 'italic',
-    letterSpacing: 0.45,
-  },
-  upiTaglineSelected: {
-    color: '#636363',
-  },
   stripeText: {
     color: '#635BFF',
     fontSize: 20,
@@ -953,5 +901,31 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     flexShrink: 1,
     textAlign: 'right',
+  },
+  confirmedMovieRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  confirmedMoviePoster: {
+    width: 64,
+    height: 88,
+    borderRadius: 10,
+  },
+  confirmedMovieInfo: {
+    flex: 1,
+    gap: 6,
+  },
+  confirmedMovieTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
+  confirmedMovieTime: {
+    color: 'rgba(255, 255, 255, 0.82)',
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: '500',
   },
 });

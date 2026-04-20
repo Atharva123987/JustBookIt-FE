@@ -64,6 +64,9 @@ export type BookingData = {
   booking_id: string;
   user_id: string;
   show_id: string;
+  movie_name?: string;
+  movie_poster?: string;
+  show_timing_epoch?: number;
   seat_numbers: string[];
   pricing: {
     tickets_price: number;
@@ -86,6 +89,7 @@ export type AIQueryRequest = {
   movieId?: string;
   showId?: string;
   bookingId?: string;
+  deviceId?: string;
 };
 
 export type AIQueryResponse =
@@ -97,6 +101,7 @@ export type AIQueryResponse =
         movies: MovieSummary[];
         nextCursor: string | null;
       };
+      error?: string | null;
     };
   }
   | {
@@ -110,6 +115,7 @@ export type AIQueryResponse =
       };
       show_timings: {
         data: ShowVenue[];
+        error?: string | null;
       };
     };
   }
@@ -117,21 +123,24 @@ export type AIQueryResponse =
     intent: 'query_seat_availability';
     chat_response: string;
     api_data: {
-      available_seats: number;
+      available_seats: number | null;
+      error?: string | null;
     };
   }
   | {
     intent: 'book_movie';
     chat_response: string;
     api_data: {
-      data: BookingData;
+      data: BookingData | null;
+      error?: string | null;
     };
   }
   | {
     intent: 'get_booking';
     chat_response: string;
     api_data: {
-      data: BookingData;
+      data: BookingData | null;
+      error?: string | null;
     };
   }
   | {
@@ -199,6 +208,14 @@ type RawBookingData = {
   booking_id: string;
   user_id: string;
   show_id: string;
+  movie_name?: string;
+  movieName?: string;
+  movie_poster?: string;
+  moviePoster?: string;
+  poster_url?: string;
+  movie_poster_url?: string;
+  show_timing_epoch?: number;
+  showTimingEpoch?: number;
   seat_numbers: string[];
   payment_info: {
     payment_id: string;
@@ -217,9 +234,10 @@ type RawAIQueryResponse =
     chat_response: string;
     api_data: {
       data: {
-        movies: RawMovie[];
+        movies: RawMovie[] | null;
         nextCursor: string | null;
       };
+      error?: string | null;
     };
   }
   | {
@@ -232,7 +250,8 @@ type RawAIQueryResponse =
         };
       };
       show_timings: {
-        data: RawShowVenue[];
+        data: RawShowVenue[] | null;
+        error?: string | null;
       };
     };
   }
@@ -240,21 +259,24 @@ type RawAIQueryResponse =
     intent: 'query_seat_availability';
     chat_response: string;
     api_data: {
-      available_seats: number;
+      available_seats: number | null;
+      error?: string | null;
     };
   }
   | {
     intent: 'book_movie';
     chat_response: string;
     api_data: {
-      data: RawBookingData;
+      data: RawBookingData | null;
+      error?: string | null;
     };
   }
   | {
     intent: 'get_booking';
     chat_response: string;
     api_data: {
-      data: RawBookingData;
+      data: RawBookingData | null;
+      error?: string | null;
     };
   }
   | {
@@ -338,6 +360,10 @@ export function buildAIRequest(request: AIQueryRequest) {
   if (request.bookingId) {
     body.bookingId = request.bookingId;
   }
+  if (request.deviceId) {
+    body.deviceId = request.deviceId;
+    body.device_id = request.deviceId;
+  }
 
   return {
     url: `${baseUrl}/ai/query?${query.toString()}`,
@@ -392,6 +418,19 @@ function normalizeMovieDetails(movie: RawMovieDetails): MovieDetails {
   };
 }
 
+function buildFallbackMovieDetails(): MovieDetails {
+  return {
+    id: 'unknown-movie',
+    title: 'Movie details unavailable',
+    duration: 0,
+    release_date: new Date(0).toISOString(),
+    genres: [],
+    cast: [],
+    description: '',
+    poster_url: '',
+  };
+}
+
 function normalizeShowTiming(show: RawShowTiming): ShowTiming {
   const paymentAmount = show.payment_amount ?? 0;
 
@@ -439,6 +478,9 @@ function normalizeBooking(data: RawBookingData): BookingData {
     booking_id: data.booking_id,
     user_id: data.user_id,
     show_id: data.show_id,
+    movie_name: data.movie_name ?? data.movieName,
+    movie_poster: data.movie_poster ?? data.moviePoster ?? data.movie_poster_url ?? data.poster_url,
+    show_timing_epoch: data.show_timing_epoch ?? data.showTimingEpoch,
     seat_numbers: data.seat_numbers,
     pricing: derivePricing(data.payment_info.payment_amount),
     payment_info: data.payment_info,
@@ -455,9 +497,10 @@ function normalizeAIResponse(response: RawAIQueryResponse): AIQueryResponse {
         ...response,
         api_data: {
           data: {
-            movies: response.api_data.data.movies.map(normalizeMovie),
-            nextCursor: response.api_data.data.nextCursor,
+            movies: (response.api_data.data?.movies ?? []).map(normalizeMovie),
+            nextCursor: response.api_data.data?.nextCursor ?? null,
           },
+          error: response.api_data.error ?? null,
         },
       };
     case 'movie_show_timetable':
@@ -466,28 +509,42 @@ function normalizeAIResponse(response: RawAIQueryResponse): AIQueryResponse {
         api_data: {
           movie_details: {
             data: {
-              movie: normalizeMovieDetails(response.api_data.movie_details.data.movie),
+              movie: response.api_data.movie_details?.data?.movie
+                ? normalizeMovieDetails(response.api_data.movie_details.data.movie)
+                : buildFallbackMovieDetails(),
             },
           },
           show_timings: {
-            data: response.api_data.show_timings.data.map(normalizeShowVenue),
+            data: (response.api_data.show_timings.data ?? []).map(normalizeShowVenue),
+            error: response.api_data.show_timings.error ?? null,
           },
         },
       };
     case 'query_seat_availability':
-      return response;
+      return {
+        ...response,
+        api_data: {
+          available_seats:
+            typeof response.api_data.available_seats === 'number'
+              ? response.api_data.available_seats
+              : null,
+          error: response.api_data.error ?? null,
+        },
+      };
     case 'book_movie':
       return {
         ...response,
         api_data: {
-          data: normalizeBooking(response.api_data.data),
+          data: response.api_data.data ? normalizeBooking(response.api_data.data) : null,
+          error: response.api_data.error ?? null,
         },
       };
     case 'get_booking':
       return {
         ...response,
         api_data: {
-          data: normalizeBooking(response.api_data.data),
+          data: response.api_data.data ? normalizeBooking(response.api_data.data) : null,
+          error: response.api_data.error ?? null,
         },
       };
     case 'unsupported_feature':
@@ -516,6 +573,7 @@ console.log("BASE URL:", configuredBaseUrl);
     headers: options.headers,
     query: request.q,
     body,
+    deviceId: request.deviceId ?? null,
     timeoutMs: REQUEST_TIMEOUT_MS,
   });
 

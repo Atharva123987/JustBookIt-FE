@@ -1,7 +1,7 @@
 import { AIIntent, AIQueryResponse, BookingData, MovieSummary, ShowTiming } from '@/services/ai-chat';
 
 export type IntentResponse<T extends AIIntent> = Extract<AIQueryResponse, { intent: T }>;
-export type PaymentMethod = 'upi' | 'stripe';
+export type PaymentMethod = 'stripe';
 export type ShowWithFormat = ShowTiming & { format: string };
 
 export type ChatAttachment =
