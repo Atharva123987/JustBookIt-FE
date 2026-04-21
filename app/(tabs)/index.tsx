@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -26,6 +27,7 @@ import { getOrCreateDeviceId, loadPersistedChatState, persistChatState } from '@
 
 const BRAND_LOGO_IMAGE = require('../../assets/images/brand-logo.png');
 const POPCORN_IMAGE = require('../../assets/images/popcorn.png');
+const IS_WEB = Platform.OS === 'web';
 
 function resetLaunchSensitiveChatContext(chatContext: ChatContext): ChatContext {
   return {
@@ -49,6 +51,23 @@ export default function HomeScreen() {
   const [lastIntent, setLastIntent] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [isProcessingPaymentReturn, setIsProcessingPaymentReturn] = useState(false);
+  const paymentReturnHandledRef = useRef<string | null>(null);
+  const { bookingId: paymentReturnBookingId, paymentReturn } = useLocalSearchParams<{
+    bookingId?: string | string[];
+    paymentReturn?: string | string[];
+  }>();
+  const resolvedPaymentReturnBookingId = useMemo(
+    () =>
+      typeof paymentReturnBookingId === 'string'
+        ? paymentReturnBookingId
+        : paymentReturnBookingId?.[0] ?? '',
+    [paymentReturnBookingId]
+  );
+  const resolvedPaymentReturn = useMemo(
+    () => (typeof paymentReturn === 'string' ? paymentReturn : paymentReturn?.[0] ?? ''),
+    [paymentReturn]
+  );
   const visibleQuickPrompts = useMemo(() => {
     const prompts =
       (lastIntent && PROMPTS_BY_INTENT[lastIntent]) ||
@@ -331,7 +350,7 @@ export default function HomeScreen() {
       messages,
       chatContext,
       lastIntent,
-    }).catch((error) => {
+    }).catch((error: unknown) => {
       console.log('[Chat Storage] Failed to persist local chat state:', error);
     });
   }, [chatContext, isHydrated, lastIntent, messages]);
@@ -372,7 +391,88 @@ export default function HomeScreen() {
     if (messages.length > 0 || isSending) {
       scrollChatToEnd();
     }
-  }, [messages, isSending]);
+  }, [isProcessingPaymentReturn, isSending, messages]);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    if (resolvedPaymentReturn === 'cancel') {
+      router.replace('/');
+      return;
+    }
+
+    if (resolvedPaymentReturn !== 'success' || !resolvedPaymentReturnBookingId) {
+      return;
+    }
+
+    const handledKey = `${resolvedPaymentReturn}:${resolvedPaymentReturnBookingId}`;
+
+    if (paymentReturnHandledRef.current === handledKey) {
+      return;
+    }
+
+    paymentReturnHandledRef.current = handledKey;
+
+    let isMounted = true;
+
+    const fetchReturnedBooking = async () => {
+      setIsProcessingPaymentReturn(true);
+
+      try {
+        const resolvedDeviceId = deviceId ?? (await getOrCreateDeviceId());
+
+        if (!deviceId && isMounted) {
+          setDeviceId(resolvedDeviceId);
+        }
+
+        const response = await queryAI({
+          q: 'get my booking',
+          bookingId: resolvedPaymentReturnBookingId,
+          deviceId: resolvedDeviceId,
+        });
+
+        if (!isMounted) {
+          return;
+        }
+
+        appendAssistantResponse(response);
+        setChatContext((currentContext) => ({
+          ...currentContext,
+          bookingId: resolvedPaymentReturnBookingId,
+        }));
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unable to refresh the booking after payment.';
+
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          {
+            id: `assistant-payment-return-error-${Date.now()}`,
+            role: 'assistant',
+            text: 'Payment completed, but we could not refresh your booking yet.',
+          },
+        ]);
+        Alert.alert('Booking Fetch Error', errorMessage);
+      } finally {
+        if (isMounted) {
+          setIsProcessingPaymentReturn(false);
+          router.replace('/');
+        }
+      }
+    };
+
+    fetchReturnedBooking();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [deviceId, isHydrated, resolvedPaymentReturn, resolvedPaymentReturnBookingId]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -391,7 +491,7 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}>
           <Image source={BRAND_LOGO_IMAGE} contentFit="contain" style={styles.logo} />
 
-          {messages.length === 0 ? (
+          {!isHydrated ? null : messages.length === 0 ? (
             <>
               <View style={styles.heroSection}>
                 <Text style={styles.heroTitle}>Booking movies made easy.</Text>
@@ -438,7 +538,9 @@ export default function HomeScreen() {
                 </View>
               ))}
 
-              {isSending ? <AssistantBubble text="Typing..." /> : null}
+              {isSending || isProcessingPaymentReturn ? (
+                <AssistantBubble text="Typing..." />
+              ) : null}
             </View>
           )}
         </ScrollView>
@@ -479,7 +581,7 @@ export default function HomeScreen() {
               onChangeText={setPrompt}
               placeholder="Ask anything"
               placeholderTextColor="rgba(255, 255, 255, 0.5)"
-              style={styles.input}
+              style={[styles.input, IS_WEB ? ({ outlineStyle: 'none' } as const as never) : null]}
               selectionColor="#FFFFFF"
               autoCapitalize="sentences"
               autoCorrect
@@ -511,24 +613,55 @@ const styles = StyleSheet.create({
   background: {
     flex: 1,
     overflow: 'hidden',
+    ...(IS_WEB
+      ? {
+          alignItems: 'center',
+        }
+      : null),
   },
   content: {
     flex: 1,
+    width: '100%',
+    ...(IS_WEB
+      ? {
+          maxWidth: 1180,
+        }
+      : null),
   },
   contentContainer: {
     paddingHorizontal: 20,
+    ...(IS_WEB
+      ? {
+          paddingHorizontal: 32,
+          paddingTop: 12,
+        }
+      : null),
   },
   logo: {
     alignSelf: 'center',
     width: 182,
     height: 96,
     marginTop: 2,
+    ...(IS_WEB
+      ? {
+          width: 220,
+          height: 116,
+          marginTop: 8,
+        }
+      : null),
   },
   heroSection: {
     marginTop: 96,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    ...(IS_WEB
+      ? {
+          marginTop: 48,
+          alignItems: 'center',
+          gap: 32,
+        }
+      : null),
   },
   heroTitle: {
     width: 246,
@@ -537,6 +670,13 @@ const styles = StyleSheet.create({
     lineHeight: 48,
     fontWeight: '300',
     letterSpacing: -1,
+    ...(IS_WEB
+      ? {
+          width: 420,
+          fontSize: 56,
+          lineHeight: 68,
+        }
+      : null),
   },
   popcorn: {
     width: 112,
@@ -544,9 +684,22 @@ const styles = StyleSheet.create({
     marginTop: -4,
     marginRight: -10,
     transform: [{ rotate: '17deg' }],
+    ...(IS_WEB
+      ? {
+          width: 180,
+          height: 204,
+          marginRight: 0,
+        }
+      : null),
   },
   trySection: {
     marginTop: 112,
+    ...(IS_WEB
+      ? {
+          marginTop: 72,
+          maxWidth: 760,
+        }
+      : null),
   },
   sectionTitle: {
     color: '#FFFFFF',
@@ -562,6 +715,15 @@ const styles = StyleSheet.create({
   chatMessages: {
     paddingTop: 28,
     gap: 18,
+    ...(IS_WEB
+      ? {
+          maxWidth: 880,
+          alignSelf: 'center',
+          width: '100%',
+          paddingTop: 20,
+          paddingBottom: 24,
+        }
+      : null),
   },
   messageBlock: {
     gap: 10,
@@ -573,6 +735,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     paddingHorizontal: 22,
     paddingTop: 12,
+    ...(IS_WEB
+      ? {
+          width: '100%',
+          paddingHorizontal: 32,
+          alignItems: 'center',
+        }
+      : null),
   },
   suggestionTray: {
     marginBottom: 12,
@@ -609,6 +778,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingLeft: 21,
     paddingRight: 12,
+    ...(IS_WEB
+      ? {
+          maxWidth: 880,
+          alignSelf: 'center',
+          width: '100%',
+          minHeight: 56,
+          borderRadius: 28,
+          outlineWidth: 0,
+          outlineColor: 'transparent',
+          boxShadow: 'none',
+        }
+      : null),
   },
   input: {
     flex: 1,
@@ -618,6 +799,14 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     paddingVertical: 12,
     paddingRight: 12,
+    ...(IS_WEB
+      ? {
+          outlineWidth: 0,
+          outlineColor: 'transparent',
+          boxShadow: 'none',
+          borderWidth: 0,
+        }
+      : null),
   },
   submitButton: {
     width: 36,
