@@ -9,6 +9,7 @@ const REQUEST_TIMEOUT_MS = 45000;
 export type AIIntent =
   | 'search_all_movies'
   | 'movie_show_timetable'
+  | 'query_seats'
   | 'query_seat_availability'
   | 'book_movie'
   | 'get_booking'
@@ -59,6 +60,50 @@ export type MovieDetails = {
   poster_url: string;
 };
 
+export type TheatreExit =
+  | 'bottom-left'
+  | 'bottom-right'
+  | 'middle-left'
+  | 'middle-right'
+  | 'top-left'
+  | 'top-right';
+
+export type TheatreSeatStatus = 'available' | 'booked' | 'reserved';
+export type TheatreSeatType = 'VIP' | 'Regular' | string;
+
+export type TheatreSeat = {
+  type: TheatreSeatType;
+  status: TheatreSeatStatus;
+  seat_number: string;
+  cost: number;
+  booking_id?: string;
+};
+
+export type TheatreSeatRow = {
+  row: string;
+  seats: TheatreSeat[];
+};
+
+export type TheatreAisles = {
+  vertical_after_seat_indexes?: number[];
+  horizontal_after_rows?: string[];
+};
+
+export type TheatreLayout = {
+  id: string;
+  movie_id: string;
+  movie_title: string;
+  screen_number: number;
+  show_timing_epoch: number;
+  show_type: string;
+  location_id: string;
+  exits: TheatreExit[];
+  seat_rows: TheatreSeatRow[];
+  aisles?: TheatreAisles;
+  price_label: number;
+  available_seats?: number | null;
+};
+
 export type BookingData = {
   id: string;
   booking_id: string;
@@ -79,6 +124,7 @@ export type BookingData = {
     payment_method: string;
     transaction_time: string;
     payment_amount: number;
+    convenience_fees?: number;
   };
   status: string;
   payment_link?: string;
@@ -89,6 +135,7 @@ export type AIQueryRequest = {
   movieId?: string;
   showId?: string;
   bookingId?: string;
+  seatNumbers?: string[];
   deviceId?: string;
 };
 
@@ -117,6 +164,15 @@ export type AIQueryResponse =
         data: ShowVenue[];
         error?: string | null;
       };
+    };
+  }
+  | {
+    intent: 'query_seats';
+    chat_response: string;
+    api_data: {
+      data: TheatreLayout | null;
+      available_seats?: number | null;
+      error?: string | null;
     };
   }
   | {
@@ -203,6 +259,38 @@ type RawShowVenue = {
   shows: Array<Record<string, RawShowTiming[]>> | Record<string, RawShowTiming[]>;
 };
 
+type RawTheatreSeat = {
+  type: TheatreSeatType;
+  status: TheatreSeatStatus;
+  seat_number?: string;
+  cost: number;
+  booking_id?: string;
+};
+
+type RawTheatreSeatRow = {
+  row: string;
+  seats: RawTheatreSeat[];
+};
+
+type RawTheatreAisles = {
+  vertical_after_seat_indexes?: number[];
+  horizontal_after_rows?: string[];
+};
+
+type RawTheatreLayout = {
+  id: string;
+  movie_id: string;
+  movie_title: string;
+  screen_number: number;
+  show_timing_epoch: number;
+  show_type: string;
+  location_id: string;
+  exits: TheatreExit[];
+  seat_rows: RawTheatreSeatRow[];
+  aisles?: RawTheatreAisles;
+  price_label: number;
+};
+
 type RawBookingData = {
   id: string;
   booking_id: string;
@@ -223,6 +311,7 @@ type RawBookingData = {
     payment_method: string;
     transaction_time: string;
     payment_amount: number;
+    convenience_fees?: number;
   };
   status: string;
   payment_link?: string;
@@ -253,6 +342,15 @@ type RawAIQueryResponse =
         data: RawShowVenue[] | null;
         error?: string | null;
       };
+    };
+  }
+  | {
+    intent: 'query_seats';
+    chat_response: string;
+    api_data: {
+      data: RawTheatreLayout | null;
+      available_seats?: number | null;
+      error?: string | null;
     };
   }
   | {
@@ -347,7 +445,7 @@ const configuredBaseUrl = Constants.expoConfig?.extra?.apiUrl;
 export function buildAIRequest(request: AIQueryRequest) {
   const baseUrl = resolveApiBaseUrl();
   const query = new URLSearchParams({ q: request.q });
-  const body: Record<string, string> = {};
+  const body: Record<string, unknown> = {};
 
   if (request.movieId) {
     body.movieId = request.movieId;
@@ -359,6 +457,10 @@ export function buildAIRequest(request: AIQueryRequest) {
   }
   if (request.bookingId) {
     body.bookingId = request.bookingId;
+  }
+  if (request.seatNumbers && request.seatNumbers.length > 0) {
+    body.seatNumbers = request.seatNumbers;
+    body.seat_numbers = request.seatNumbers;
   }
   
 
@@ -382,14 +484,14 @@ function formatCurrency(value?: number) {
   return `\u20B9 ${value}+`;
 }
 
-function derivePricing(paymentAmount: number) {
-  const convenienceFee = paymentAmount > 100 ? 100 : 0;
-  const ticketsPrice = Math.max(paymentAmount - convenienceFee, 0);
+function derivePricing(paymentAmount: number, convenienceFees?: number) {
+  const convenienceFee = convenienceFees ?? 0;
+  const ticketsPrice = Math.max(paymentAmount, 0);
 
   return {
     tickets_price: ticketsPrice,
     convenience_fee: convenienceFee,
-    order_total: paymentAmount,
+    order_total: paymentAmount + convenienceFee,
   };
 }
 
@@ -470,6 +572,37 @@ function normalizeShowVenue(venue: RawShowVenue): ShowVenue {
   };
 }
 
+function normalizeTheatreLayout(data: RawTheatreLayout): TheatreLayout {
+  return {
+    id: data.id,
+    movie_id: data.movie_id,
+    movie_title: data.movie_title,
+    screen_number: data.screen_number,
+    show_timing_epoch: data.show_timing_epoch,
+    show_type: data.show_type,
+    location_id: data.location_id,
+    exits: data.exits ?? [],
+    seat_rows: (data.seat_rows ?? []).map((row) => ({
+      row: row.row,
+      seats: (row.seats ?? []).map((seat, seatIndex) => ({
+        type: seat.type,
+        status: seat.status,
+        seat_number: seat.seat_number?.trim() || `${row.row}${seatIndex + 1}`,
+        cost: data.price_label ?? seat.cost ?? 0,
+        booking_id: seat.booking_id,
+      })),
+    })),
+    aisles: data.aisles
+      ? {
+          vertical_after_seat_indexes: data.aisles.vertical_after_seat_indexes ?? [],
+          horizontal_after_rows: data.aisles.horizontal_after_rows ?? [],
+        }
+      : undefined,
+    price_label: data.price_label ?? 0,
+    available_seats: null,
+  };
+}
+
 function normalizeBooking(data: RawBookingData): BookingData {
   return {
     id: data.id,
@@ -480,7 +613,7 @@ function normalizeBooking(data: RawBookingData): BookingData {
     movie_poster: data.movie_poster ?? data.moviePoster ?? data.movie_poster_url ?? data.poster_url,
     show_timing_epoch: data.show_timing_epoch ?? data.showTimingEpoch,
     seat_numbers: data.seat_numbers,
-    pricing: derivePricing(data.payment_info.payment_amount),
+    pricing: derivePricing(data.payment_info.payment_amount, data.payment_info.convenience_fees),
     payment_info: data.payment_info,
     status: data.status,
     payment_link: data.payment_link,
@@ -518,6 +651,27 @@ function normalizeAIResponse(response: RawAIQueryResponse): AIQueryResponse {
           },
         },
       };
+    case 'query_seats':
+      const normalizedLayout = response.api_data.data ? normalizeTheatreLayout(response.api_data.data) : null;
+
+      if (normalizedLayout) {
+        normalizedLayout.available_seats =
+          typeof response.api_data.available_seats === 'number'
+            ? response.api_data.available_seats
+            : null;
+      }
+
+      return {
+        ...response,
+        api_data: {
+          data: normalizedLayout,
+          available_seats:
+            typeof response.api_data.available_seats === 'number'
+              ? response.api_data.available_seats
+              : null,
+          error: response.api_data.error ?? null,
+        },
+      };
     case 'query_seat_availability':
       return {
         ...response,
@@ -553,6 +707,56 @@ function normalizeAIResponse(response: RawAIQueryResponse): AIQueryResponse {
     default:
       throw new Error('Unsupported intent returned by AI API.');
   }
+}
+
+const MOCK_THEATRE_LAYOUT_TEMPLATE: RawTheatreLayout = {
+  id: '68b200000000000000000001',
+  movie_id: '68b02b634cb16581f7773598',
+  movie_title: 'The Dark Knight',
+  screen_number: 1,
+  show_timing_epoch: 1808222400,
+  show_type: 'IMAX 2D',
+  location_id: '68b0635b4cb16581f77735b4',
+  exits: ['bottom-left', 'bottom-right', 'middle-left', 'top-right'],
+  aisles: {
+    vertical_after_seat_indexes: [2, 5],
+    horizontal_after_rows: ['B', 'F'],
+  },
+  seat_rows: [
+    { row: 'A', seats: [{ type: 'VIP', status: 'available', cost: 100 }, { type: 'VIP', status: 'available', cost: 100 }, { type: 'VIP', status: 'booked', cost: 100 }, { type: 'VIP', status: 'available', cost: 100 }, { type: 'VIP', status: 'available', cost: 100 }, { type: 'VIP', status: 'available', cost: 100 }, { type: 'VIP', status: 'available', cost: 100 }] },
+    { row: 'B', seats: [{ type: 'VIP', status: 'available', cost: 100 }, { type: 'VIP', status: 'booked', cost: 100 }, { type: 'VIP', status: 'available', cost: 100 }, { type: 'VIP', status: 'available', cost: 100 }, { type: 'VIP', status: 'available', cost: 100 }, { type: 'VIP', status: 'available', cost: 100 }, { type: 'VIP', status: 'available', cost: 100 }] },
+    { row: 'C', seats: [{ type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'booked', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'pHwMTIhXMEHN', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'pHwMTIhXMEHN', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'pHwMTIhXMEHN', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }] },
+    { row: 'D', seats: [{ type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'booked', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'zhAK0nD9kyCE', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }] },
+    { row: 'E', seats: [{ type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'lqItTVKykOMK', cost: 100 }, { type: 'Regular', status: 'booked', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'PXv2VcJwgFGf', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'PXv2VcJwgFGf', cost: 100 }] },
+    { row: 'F', seats: [{ type: 'Regular', status: 'reserved', booking_id: 'gFu8GPGoeVEw', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'gFu8GPGoeVEw', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'gFu8GPGoeVEw', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'xD9QK1N4j6n1', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'xD9QK1N4j6n1', cost: 100 }, { type: 'Regular', status: 'booked', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }] },
+    { row: 'G', seats: [{ type: 'Regular', status: 'booked', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'gphNP41cgY4k', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'gphNP41cgY4k', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'Vi2LUirkUn53', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'Vi2LUirkUn53', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'KlJTGbXInbuR', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'KlJTGbXInbuR', cost: 100 }] },
+    { row: 'H', seats: [{ type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'booked', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'MJ3W5VKINVzN', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'MJ3W5VKINVzN', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'MJ3W5VKINVzN', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'RHRasibUeCJ6', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'RHRasibUeCJ6', cost: 100 }] },
+    { row: 'I', seats: [{ type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'booked', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'GrODhWgFMM2D', cost: 100 }, { type: 'Regular', status: 'reserved', booking_id: 'GrODhWgFMM2D', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }] },
+    { row: 'J', seats: [{ type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'booked', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }, { type: 'Regular', status: 'available', cost: 100 }] },
+  ],
+  price_label: 100,
+};
+
+export function buildMockSeatQueryResponse(show: ShowTiming): AIQueryResponse {
+  const mockLayout: RawTheatreLayout = {
+    ...MOCK_THEATRE_LAYOUT_TEMPLATE,
+    id: show.id,
+    movie_id: show.movie_id,
+    movie_title: show.movie_title,
+    screen_number: show.screen_number,
+    show_timing_epoch: show.show_timing_epoch,
+    show_type: show.show_type,
+    location_id: show.location_id,
+  };
+
+  return normalizeAIResponse({
+    intent: 'query_seats',
+    chat_response: `Here is the live seating layout for ${show.movie_title}. Pick any available seats or type them in chat like A1, A2.`,
+    api_data: {
+      data: mockLayout,
+      available_seats: 35,
+    },
+  });
 }
 
 export async function queryAI(request: AIQueryRequest): Promise<AIQueryResponse> {

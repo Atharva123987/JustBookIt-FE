@@ -22,7 +22,13 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AssistantBubble, IntentAttachment, PromptCard, UserBubble } from '@/components/chat/cards';
 import { PROMPTS_BY_INTENT } from '@/components/chat/constants';
 import { ChatAttachment, ChatContext, ChatMessage, PaymentMethod, ShowWithFormat } from '@/components/chat/types';
-import { AIQueryRequest, AIQueryResponse, BookingData, MovieSummary, queryAI } from '@/services/ai-chat';
+import {
+  AIQueryRequest,
+  AIQueryResponse,
+  BookingData,
+  MovieSummary,
+  queryAI,
+} from '@/services/ai-chat';
 import { getOrCreateDeviceId, loadPersistedChatState, persistChatState } from '@/services/chat-storage';
 
 const BRAND_LOGO_IMAGE = require('../../assets/images/brand-logo.png');
@@ -35,7 +41,31 @@ function resetLaunchSensitiveChatContext(chatContext: ChatContext): ChatContext 
     selectedMovieId: undefined,
     selectedShowId: undefined,
     pendingShow: undefined,
+    seatLayout: undefined,
+    selectedSeatNumbers: [],
   };
+}
+
+function parseSeatSelectionPrompt(value: string) {
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
+
+  if (!normalized) {
+    return null;
+  }
+
+  const seats = normalized
+    .split(',')
+    .map((seat) => seat.trim())
+    .filter(Boolean);
+
+  if (seats.length === 0 || seats.some((seat) => !/^[A-Z]+\d+$/.test(seat))) {
+    return null;
+  }
+
+  return Array.from(new Set(seats));
 }
 
 export default function HomeScreen() {
@@ -96,6 +126,11 @@ export default function HomeScreen() {
           attachment = { intent: response.intent, data: response.api_data };
         }
         break;
+      case 'query_seats':
+        if (response.api_data.data) {
+          attachment = { intent: response.intent, data: response.api_data };
+        }
+        break;
       case 'query_seat_availability':
         if (typeof response.api_data.available_seats === 'number') {
           attachment = { intent: response.intent, data: response.api_data };
@@ -116,6 +151,7 @@ export default function HomeScreen() {
     const allowedNoAttachmentIntents = [
       'search_all_movies',
       'movie_show_timetable',
+      'query_seats',
       'query_seat_availability',
       'book_movie',
       'get_booking',
@@ -142,6 +178,19 @@ export default function HomeScreen() {
       setChatContext((currentContext) => ({
         ...currentContext,
         selectedMovieId: response.api_data.movie_details.data.movie.id,
+        seatLayout: undefined,
+        selectedSeatNumbers: [],
+      }));
+    }
+
+    if (response.intent === 'query_seats' && response.api_data.data) {
+      const theatreLayout = response.api_data.data;
+
+      setChatContext((currentContext) => ({
+        ...currentContext,
+        selectedShowId: theatreLayout.id,
+        seatLayout: theatreLayout,
+        selectedSeatNumbers: [],
       }));
     }
 
@@ -152,6 +201,8 @@ export default function HomeScreen() {
         ...currentContext,
         bookingId: bookingData.booking_id,
         selectedShowId: bookingData.show_id,
+        seatLayout: undefined,
+        selectedSeatNumbers: [],
       }));
     }
 
@@ -205,6 +256,7 @@ export default function HomeScreen() {
         movieId: overrides?.movieId ?? chatContext.selectedMovieId,
         showId: overrides?.showId ?? chatContext.selectedShowId,
         bookingId: overrides?.bookingId ?? chatContext.bookingId,
+        seatNumbers: overrides?.seatNumbers,
         deviceId: overrides?.deviceId ?? resolvedDeviceId,
       });
 
@@ -228,6 +280,65 @@ export default function HomeScreen() {
   };
 
   const handlePromptSubmit = async () => {
+    const selectedSeatCodes = parseSeatSelectionPrompt(prompt);
+    const seatLayout = chatContext.seatLayout;
+
+    if (selectedSeatCodes && seatLayout) {
+      const seatLookup = new Map(
+        seatLayout.seat_rows.flatMap((row) =>
+          row.seats.map((seat) => [seat.seat_number.toUpperCase(), seat] as const)
+        )
+      );
+      const unavailableSeats = selectedSeatCodes.filter((seatCode) => {
+        const seat = seatLookup.get(seatCode);
+        return !seat || seat.status !== 'available';
+      });
+
+      const userMessage: ChatMessage = {
+        id: `user-seat-selection-${Date.now()}`,
+        role: 'user',
+        text: prompt.trim(),
+      };
+
+      setMessages((currentMessages) => [...currentMessages, userMessage]);
+
+      if (unavailableSeats.length > 0) {
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          {
+            id: `assistant-seat-selection-error-${Date.now()}`,
+            role: 'assistant',
+            text: `These seats are not available: ${unavailableSeats.join(', ')}. Please choose seats marked as available.`,
+            attachment: {
+              intent: 'query_seats',
+              data: { data: seatLayout },
+            },
+          },
+        ]);
+      } else {
+        setChatContext((currentContext) => ({
+          ...currentContext,
+          selectedSeatNumbers: selectedSeatCodes,
+        }));
+
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          {
+            id: `assistant-seat-selection-confirm-${Date.now()}`,
+            role: 'assistant',
+            text: `Selected seats ${selectedSeatCodes.join(', ')}. You can keep adjusting them on the layout or tap Proceed To Booking when you're ready.`,
+            attachment: {
+              intent: 'query_seats',
+              data: { data: seatLayout },
+            },
+          },
+        ]);
+      }
+
+      setPrompt('');
+      return;
+    }
+
     await sendQuery(prompt);
   };
 
@@ -239,25 +350,62 @@ export default function HomeScreen() {
     await sendQuery('show movie timetable', { movieId: movie.id }, movie.title);
   };
 
-  const handleShowPress = (show: ShowWithFormat) => {
+  const handleShowPress = async (show: ShowWithFormat) => {
     setChatContext((currentContext) => ({
       ...currentContext,
       selectedShowId: show.id,
       pendingShow: show,
+      seatLayout: undefined,
+      selectedSeatNumbers: [],
     }));
+    await sendQuery('show seats', { showId: show.id, movieId: show.movie_id }, `${show.movie_title} · ${show.format}`);
+  };
 
-    setMessages((currentMessages) => [
-      ...currentMessages,
+  const handleSeatToggle = (seatNumber: string) => {
+    const seatLayout = chatContext.seatLayout;
+
+    if (!seatLayout) {
+      return;
+    }
+
+    const selectedSeat = seatLayout.seat_rows
+      .flatMap((row) => row.seats)
+      .find((seat) => seat.seat_number === seatNumber);
+
+    if (!selectedSeat || selectedSeat.status !== 'available') {
+      return;
+    }
+
+    setChatContext((currentContext) => {
+      const currentSelectedSeats = currentContext.selectedSeatNumbers ?? [];
+      const nextSelectedSeats = currentSelectedSeats.includes(seatNumber)
+        ? currentSelectedSeats.filter((seat) => seat !== seatNumber)
+        : [...currentSelectedSeats, seatNumber];
+
+      return {
+        ...currentContext,
+        selectedSeatNumbers: nextSelectedSeats,
+      };
+    });
+  };
+
+  const handleSeatProceed = async () => {
+    const selectedSeatNumbers = chatContext.selectedSeatNumbers ?? [];
+
+    if (selectedSeatNumbers.length === 0) {
+      return;
+    }
+
+    await sendQuery(
+      'book movie',
       {
-        id: `assistant-seat-selection-${Date.now()}`,
-        role: 'assistant',
-        text: 'Select the number of seats for this show.',
-        attachment: {
-          intent: 'seat_selection',
-          data: { show },
-        },
+        movieId: chatContext.selectedMovieId,
+        showId: chatContext.selectedShowId,
+        bookingId: chatContext.bookingId,
+        seatNumbers: selectedSeatNumbers,
       },
-    ]);
+      `Book seats ${selectedSeatNumbers.join(', ')}`
+    );
   };
 
   const handleSeatCountPress = async (seatCount: number, show: ShowWithFormat) => {
@@ -526,9 +674,12 @@ export default function HomeScreen() {
                         <IntentAttachment
                           attachment={message.attachment}
                           selectedPaymentMethod={chatContext.selectedPaymentMethod}
+                          selectedSeatNumbers={chatContext.selectedSeatNumbers ?? []}
                           onMoviePress={handleMoviePress}
                           onShowPress={handleShowPress}
                           onSeatCountPress={handleSeatCountPress}
+                          onSeatToggle={handleSeatToggle}
+                          onSeatProceed={handleSeatProceed}
                           onPaymentMethodSelect={handlePaymentMethodSelect}
                           onPaymentPress={handlePaymentPress}
                         />

@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { BookingData, MovieSummary } from '@/services/ai-chat';
+import { BookingData, MovieSummary, TheatreLayout } from '@/services/ai-chat';
 
 import { SEAT_OPTIONS } from './constants';
 import {
@@ -13,6 +13,8 @@ import {
   PaymentMethod,
   PaymentPressHandler,
   SeatCountPressHandler,
+  SeatProceedHandler,
+  SeatToggleHandler,
   ShowPressHandler,
   ShowWithFormat,
 } from './types';
@@ -98,9 +100,12 @@ function MovieListCard({
           })}
         </Text>
         <Text style={styles.movieDescription}>{movie.description}</Text>
-      </View>
-      <View style={styles.movieArrowWrap}>
-        <MaterialIcons name="arrow-forward" size={22} color="#000000" />
+        <View style={styles.movieCardCtaRow}>
+          <View style={styles.movieCardCta}>
+            <Text style={styles.movieCardCtaText}>View Show Timings</Text>
+            <MaterialIcons name="arrow-forward" size={16} color="#4D007A" />
+          </View>
+        </View>
       </View>
     </Pressable>
   );
@@ -186,6 +191,180 @@ function SeatSelectionCard({
   );
 }
 
+function SeatMapCard({
+  layout,
+  selectedSeatNumbers,
+  onSeatToggle,
+  onProceedToBooking,
+}: {
+  layout: TheatreLayout;
+  selectedSeatNumbers: string[];
+  onSeatToggle: SeatToggleHandler;
+  onProceedToBooking: SeatProceedHandler;
+}) {
+  const exitSet = new Set(layout.exits);
+  const verticalAisles = new Set(layout.aisles?.vertical_after_seat_indexes ?? []);
+  const horizontalAisles = new Set(layout.aisles?.horizontal_after_rows ?? []);
+  const seatLookup = new Map(
+    layout.seat_rows.flatMap((row) => row.seats.map((seat) => [seat.seat_number, seat] as const))
+  );
+  const selectedSeatTotal = selectedSeatNumbers.reduce(
+    (sum, seatNumber) => sum + (seatLookup.get(seatNumber)?.cost ?? 0),
+    0
+  );
+
+  return (
+    <View style={styles.seatMapCard}>
+      <View style={styles.seatMapHeader}>
+        <View>
+          <Text style={styles.summaryTitle}>Choose Your Seats</Text>
+          <Text style={styles.seatMapSubtitle}>
+            Screen {layout.screen_number} - {layout.show_type}
+          </Text>
+          {typeof layout.available_seats === 'number' ? (
+            <Text style={styles.availableSeatCount}>
+              {layout.available_seats} seats available
+            </Text>
+          ) : null}
+        </View>
+        <View style={styles.seatPriceBadge}>
+          <Text style={styles.seatPriceLabel}>From</Text>
+          <Text style={styles.seatPriceValue}>{formatCurrency(layout.price_label)}</Text>
+        </View>
+      </View>
+
+      <View style={styles.seatLegendRow}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendSwatch, styles.legendAvailable]} />
+          <Text style={styles.legendText}>Available</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendSwatch, styles.legendSelected]} />
+          <Text style={styles.legendText}>Selected</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendSwatch, styles.legendReserved]} />
+          <Text style={styles.legendText}>Reserved</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendSwatch, styles.legendBooked]} />
+          <Text style={styles.legendText}>Booked</Text>
+        </View>
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <View style={styles.seatMapViewport}>
+          <View style={styles.seatMapTopRow}>
+            <ExitChip visible={exitSet.has('top-left')} side="left" />
+            <View style={styles.seatMapTopSpacer} />
+            <ExitChip visible={exitSet.has('top-right')} side="right" />
+          </View>
+
+          <View style={styles.seatGridShell}>
+            <View style={styles.exitColumn}>
+              <ExitChip visible={exitSet.has('middle-left')} side="left" compact />
+            </View>
+
+            <View style={styles.seatGrid}>
+              {layout.seat_rows.map((row) => (
+                <View key={row.row} style={styles.seatRowWrap}>
+                  <View style={styles.seatRow}>
+                    <Text style={styles.rowLabel}>{row.row}</Text>
+                    <View style={styles.seatRowSeats}>
+                      {row.seats.map((seat, seatIndex) => {
+                        const isSelected = selectedSeatNumbers.includes(seat.seat_number);
+                        const isDisabled = seat.status !== 'available';
+
+                        return (
+                          <View key={seat.seat_number} style={styles.seatCell}>
+                            <Pressable
+                              onPress={() => onSeatToggle(seat.seat_number)}
+                              disabled={isDisabled}
+                              style={[
+                                styles.seatButton,
+                                seat.type === 'VIP' ? styles.vipSeat : styles.regularSeat,
+                                seat.status === 'booked' ? styles.bookedSeat : null,
+                                seat.status === 'reserved' ? styles.reservedSeat : null,
+                                isSelected ? styles.selectedSeat : null,
+                              ]}>
+                              <Text
+                                style={[
+                                  styles.seatButtonText,
+                                  isDisabled ? styles.disabledSeatText : null,
+                                  isSelected ? styles.selectedSeatText : null,
+                                ]}>
+                                {seat.seat_number}
+                              </Text>
+                            </Pressable>
+                            {verticalAisles.has(seatIndex + 1) ? <View style={styles.verticalAisle} /> : null}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                  {horizontalAisles.has(row.row) ? <View style={styles.horizontalAisle} /> : null}
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.exitColumn} />
+          </View>
+
+          <View style={styles.seatMapBottomRow}>
+            <ExitChip visible={exitSet.has('bottom-left')} side="left" />
+            <View style={styles.selectedSeatSummary}>
+              <Text style={styles.selectedSeatSummaryLabel}>Selected</Text>
+              <Text style={styles.selectedSeatSummaryValue}>
+                {selectedSeatNumbers.length > 0 ? selectedSeatNumbers.join(', ') : 'Tap seats or type A1, A2'}
+              </Text>
+              <Text style={styles.selectedSeatSummaryCost}>
+                Total: {formatCurrency(selectedSeatTotal)}
+              </Text>
+            </View>
+            <ExitChip visible={exitSet.has('bottom-right')} side="right" />
+          </View>
+
+          <View style={styles.screenBottomWrap}>
+            <View style={styles.screenArc} />
+            <Text style={styles.screenLabel}>SCREEN THIS WAY</Text>
+          </View>
+
+          <Pressable
+            style={[
+              styles.primaryAction,
+              selectedSeatNumbers.length === 0 ? styles.primaryActionDisabled : null,
+            ]}
+            disabled={selectedSeatNumbers.length === 0}
+            onPress={onProceedToBooking}>
+            <Text style={styles.primaryActionText}>Proceed To Booking</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function ExitChip({
+  visible,
+  side,
+  compact = false,
+}: {
+  visible: boolean;
+  side: 'left' | 'right';
+  compact?: boolean;
+}) {
+  if (!visible) {
+    return <View style={compact ? styles.exitChipSpacerCompact : styles.exitChipSpacer} />;
+  }
+
+  return (
+    <View style={[styles.exitChip, compact ? styles.exitChipCompact : null]}>
+      <MaterialIcons name={side === 'left' ? 'west' : 'east'} size={compact ? 12 : 14} color="#91721b" />
+      <Text style={styles.exitChipText}>EXIT</Text>
+    </View>
+  );
+}
+
 function PaymentOptionButton({
   method,
   isSelected,
@@ -215,6 +394,15 @@ function BookingSummaryCard({
   onPaymentMethodSelect: (method: PaymentMethod) => void;
   onPayPress: PaymentPressHandler;
 }) {
+  const showTimeLabel =
+    typeof booking.show_timing_epoch === 'number'
+      ? new Date(booking.show_timing_epoch * 1000).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })
+      : null;
+
   return (
     <View style={styles.summaryCard}>
       <Text style={styles.summaryTitle}>Booking Summary</Text>
@@ -222,10 +410,36 @@ function BookingSummaryCard({
         <Text style={styles.summaryLabel}>Booking ID</Text>
         <Text style={styles.summaryValue}>{booking.booking_id}</Text>
       </View>
-      <View style={styles.summaryRow}>
-        <Text style={styles.summaryLabel}>Show ID</Text>
-        <Text style={styles.summaryValue}>{booking.show_id}</Text>
-      </View>
+      {booking.movie_name || booking.movie_poster || showTimeLabel ? (
+        <View style={styles.summaryTicketCard}>
+          <View style={styles.ticketHeaderRow}>
+            <Text style={styles.ticketHeaderTitle}>Movie Ticket</Text>
+            <Text style={styles.ticketHeaderStatusPending}>PENDING</Text>
+          </View>
+          <View style={styles.confirmedMovieRow}>
+            {booking.movie_poster ? (
+              <Image
+                source={{ uri: booking.movie_poster }}
+                contentFit="cover"
+                style={styles.confirmedMoviePoster}
+              />
+            ) : null}
+            <View style={styles.confirmedMovieInfo}>
+              {booking.movie_name ? (
+                <Text style={styles.confirmedMovieTitle}>{booking.movie_name}</Text>
+              ) : null}
+              {showTimeLabel ? (
+                <Text style={styles.confirmedMovieTime}>{showTimeLabel}</Text>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Show ID</Text>
+          <Text style={styles.summaryValue}>{booking.show_id}</Text>
+        </View>
+      )}
       <View style={styles.summaryRow}>
         <Text style={styles.summaryLabel}>Seats</Text>
         <Text style={styles.summaryValue}>{booking.seat_numbers.join(', ')}</Text>
@@ -348,17 +562,23 @@ function BookingConfirmationCard({ booking }: { booking: BookingData }) {
 export function IntentAttachment({
   attachment,
   selectedPaymentMethod,
+  selectedSeatNumbers,
   onMoviePress,
   onShowPress,
   onSeatCountPress,
+  onSeatToggle,
+  onSeatProceed,
   onPaymentMethodSelect,
   onPaymentPress,
 }: {
   attachment: ChatAttachment;
   selectedPaymentMethod?: PaymentMethod;
+  selectedSeatNumbers: string[];
   onMoviePress: MoviePressHandler;
   onShowPress: ShowPressHandler;
   onSeatCountPress: SeatCountPressHandler;
+  onSeatToggle: SeatToggleHandler;
+  onSeatProceed: SeatProceedHandler;
   onPaymentMethodSelect: (method: PaymentMethod) => void;
   onPaymentPress: PaymentPressHandler;
 }) {
@@ -423,6 +643,23 @@ export function IntentAttachment({
     return (
       <View style={styles.attachmentBlock}>
         <SeatSelectionCard show={attachment.data.show} onSeatCountPress={onSeatCountPress} />
+      </View>
+    );
+  }
+
+  if (attachment.intent === 'query_seats') {
+    if (!attachment.data.data) {
+      return null;
+    }
+
+    return (
+      <View style={styles.attachmentBlock}>
+        <SeatMapCard
+          layout={attachment.data.data}
+          selectedSeatNumbers={selectedSeatNumbers}
+          onSeatToggle={onSeatToggle}
+          onProceedToBooking={onSeatProceed}
+        />
       </View>
     );
   }
@@ -539,10 +776,24 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     marginTop: 14,
   },
-  movieArrowWrap: {
-    justifyContent: 'flex-end',
-    paddingBottom: 8,
-    paddingLeft: 4,
+  movieCardCtaRow: {
+    marginTop: 16,
+  },
+  movieCardCta: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  movieCardCtaText: {
+    color: '#4D007A',
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '700',
   },
   contentDivider: {
     height: StyleSheet.hairlineWidth,
@@ -711,6 +962,285 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 4,
   },
+  seatMapCard: {
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.24)',
+    padding: 18,
+    gap: 14,
+  },
+  seatMapHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  seatMapSubtitle: {
+    color: 'rgba(255, 255, 255, 0.78)',
+    fontSize: 13,
+    lineHeight: 17,
+    marginTop: 4,
+  },
+  availableSeatCount: {
+    color: '#A8F6B9',
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  seatPriceBadge: {
+    borderRadius: 14,
+    backgroundColor: 'rgba(32, 0, 48, 0.34)',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    alignItems: 'flex-end',
+  },
+  seatPriceLabel: {
+    color: 'rgba(255, 255, 255, 0.66)',
+    fontSize: 10,
+    lineHeight: 12,
+  },
+  seatPriceValue: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    lineHeight: 18,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  seatLegendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendSwatch: {
+    width: 14,
+    height: 14,
+    borderRadius: 4,
+  },
+  legendAvailable: {
+    backgroundColor: '#2FAE57',
+  },
+  legendSelected: {
+    backgroundColor: '#72D7FF',
+  },
+  legendReserved: {
+    backgroundColor: '#E2A546',
+  },
+  legendBooked: {
+    backgroundColor: '#564266',
+  },
+  legendText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    lineHeight: 15,
+  },
+  seatMapViewport: {
+    minWidth: 470,
+    gap: 12,
+  },
+  seatMapTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  seatMapTopSpacer: {
+    flex: 1,
+    minHeight: 1,
+  },
+  screenBottomWrap: {
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  screenArc: {
+    width: '88%',
+    height: 38,
+    borderTopLeftRadius: 180,
+    borderTopRightRadius: 180,
+    borderWidth: 2,
+    borderBottomWidth: 0,
+    borderColor: 'rgba(255, 255, 255, 0.68)',
+    opacity: 0.95,
+  },
+  screenLabel: {
+    color: 'rgba(255, 255, 255, 0.76)',
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginTop: -2,
+  },
+  seatGridShell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  exitColumn: {
+    width: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  seatGrid: {
+    flex: 1,
+    gap: 10,
+    minWidth: 0,
+  },
+  seatRowWrap: {
+    gap: 10,
+  },
+  seatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  rowLabel: {
+    width: 16,
+    color: '#FFFFFF',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  seatRowSeats: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  seatCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  seatButton: {
+    width: 46,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+    paddingHorizontal: 4,
+  },
+  vipSeat: {
+    backgroundColor: '#202f0900',
+    borderColor: '#7AF09A',
+    borderWidth:2
+  },
+  regularSeat: {
+    backgroundColor: '#2fae5700',
+    borderColor: '#72E08F',
+    borderWidth:2
+  },
+  reservedSeat : {
+    backgroundColor: '#717171',
+    borderColor: '#717171',
+  },
+  bookedSeat: {
+   backgroundColor: '#717171',
+    borderColor: '#717171',
+  },
+  selectedSeat: {
+    backgroundColor: '#72E08F',
+    borderColor: '#72E08F',
+  },
+  seatButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    lineHeight: 13,
+    fontWeight: '700',
+    letterSpacing: 0.15,
+  },
+  disabledSeatText: {
+    color: 'rgba(255, 255, 255, 0.72)',
+  },
+  selectedSeatText: {
+    color: '#123C52',
+  },
+  seatMapBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  selectedSeatSummary: {
+    flex: 1,
+    borderRadius: 16,
+    backgroundColor: 'rgba(32, 0, 48, 0.32)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  selectedSeatSummaryLabel: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 10,
+    lineHeight: 12,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  selectedSeatSummaryValue: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  selectedSeatSummaryCost: {
+    color: '#A8F6B9',
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  verticalAisle: {
+    width: 18,
+    height: 2,
+    marginHorizontal: 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  horizontalAisle: {
+    height: 14,
+    marginLeft: 28,
+    marginRight: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  exitChip: {
+    minWidth: 60,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 215, 104, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 104, 0)',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  exitChipCompact: {
+    minWidth: 52,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  exitChipText: {
+    color: '#ff6600',
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  exitChipSpacer: {
+    minWidth: 60,
+    height: 30,
+  },
+  exitChipSpacerCompact: {
+    minWidth: 52,
+    height: 28,
+  },
   summaryCard: {
     borderRadius: 18,
     backgroundColor: 'rgba(194, 192, 192, 0.24)',
@@ -769,6 +1299,12 @@ const styles = StyleSheet.create({
   summaryDivider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  summaryTicketCard: {
+    borderRadius: 16,
+    backgroundColor: 'rgba(32, 0, 48, 0.22)',
+    padding: 14,
+    gap: 10,
   },
   summaryTotalLabel: {
     color: '#FFFFFF',
@@ -929,3 +1465,5 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
+
+

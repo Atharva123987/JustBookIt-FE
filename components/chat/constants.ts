@@ -17,6 +17,10 @@ export const PROMPTS_BY_INTENT: Record<string, string[]> = {
     'Book this movie',
     'Check seat availability',
   ],
+  query_seats: [
+    'A1, A2',
+    'Proceed to booking',
+  ],
   query_seat_availability: [
     '2 seats',
     '3 seats',
