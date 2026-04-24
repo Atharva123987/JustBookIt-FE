@@ -10,7 +10,7 @@ export default function PaymentSuccessScreen() {
     () => (Array.isArray(bookingId) ? bookingId[0] : bookingId)?.trim() ?? '',
     [bookingId]
   );
-
+console.log("SUCCESS SCREEN LOADED");
   useEffect(() => {
     // ⏱️ Show screen for 3 seconds FIRST
     const timer = setTimeout(() => {
