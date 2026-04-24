@@ -68,6 +68,20 @@ function parseSeatSelectionPrompt(value: string) {
   return Array.from(new Set(seats));
 }
 
+function TypingBubble() {
+  const [dotCount, setDotCount] = useState(0);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setDotCount((currentCount) => (currentCount + 1) % 4);
+    }, 350);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
+  return <AssistantBubble text={`Typing${'.'.repeat(dotCount)}`} />;
+}
+
 export default function HomeScreen() {
   const [prompt, setPrompt] = useState('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
@@ -217,9 +231,8 @@ export default function HomeScreen() {
     }
   };
 
-  const handleSuggestionPress = (suggestion: string) => {
-    setPrompt(suggestion);
-    inputRef.current?.focus();
+  const handleSuggestionPress = async (suggestion: string) => {
+    await sendQuery(suggestion, undefined, suggestion);
   };
 
   const sendQuery = async (
@@ -690,7 +703,7 @@ export default function HomeScreen() {
               ))}
 
               {isSending || isProcessingPaymentReturn ? (
-                <AssistantBubble text="Typing..." />
+                <TypingBubble />
               ) : null}
             </View>
           )}
@@ -775,7 +788,7 @@ const styles = StyleSheet.create({
     width: '100%',
     ...(IS_WEB
       ? {
-          maxWidth: 1180,
+          maxWidth: 900,
         }
       : null),
   },

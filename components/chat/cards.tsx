@@ -100,11 +100,10 @@ function MovieListCard({
           })}
         </Text>
         <Text style={styles.movieDescription}>{movie.description}</Text>
-        <View style={styles.movieCardCtaRow}>
-          <View style={styles.movieCardCta}>
-            <Text style={styles.movieCardCtaText}>View Show Timings</Text>
-            <MaterialIcons name="arrow-forward" size={16} color="#4D007A" />
-          </View>
+      </View>
+      <View style={styles.movieArrowWrap}>
+        <View style={styles.movieArrowButton}>
+          <MaterialIcons name="arrow-forward" size={18} color="#4D007A" />
         </View>
       </View>
     </Pressable>
@@ -776,24 +775,22 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     marginTop: 14,
   },
-  movieCardCtaRow: {
-    marginTop: 16,
+  movieArrowWrap: {
+    justifyContent: 'center',
+    paddingLeft: 8,
   },
-  movieCardCta: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 999,
+  movieArrowButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  movieCardCtaText: {
-    color: '#4D007A',
-    fontSize: 12,
-    lineHeight: 15,
-    fontWeight: '700',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#160021',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   contentDivider: {
     height: StyleSheet.hairlineWidth,

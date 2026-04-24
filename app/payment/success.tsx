@@ -1,23 +1,33 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
 export default function PaymentSuccessScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId?: string | string[] }>();
+
   const resolvedBookingId = useMemo(
     () => (Array.isArray(bookingId) ? bookingId[0] : bookingId)?.trim() ?? '',
     [bookingId]
   );
 
-  useEffect(() => {
+useEffect(() => {
+  if (Platform.OS === 'web' && resolvedBookingId) {
+    window.location.href =
+      `ticketbookingsystemfe://?bookingId=${resolvedBookingId}&paymentReturn=success`;
+    return;
+  }
+
+  const timer = setTimeout(() => {
     router.replace({
       pathname: '/',
       params: resolvedBookingId
         ? { paymentReturn: 'success', bookingId: resolvedBookingId }
         : { paymentReturn: 'success' },
     });
-  }, [resolvedBookingId]);
+  }, 0); // 👈 key fix
+
+  return () => clearTimeout(timer);
+}, [resolvedBookingId]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -27,7 +37,6 @@ export default function PaymentSuccessScreen() {
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,

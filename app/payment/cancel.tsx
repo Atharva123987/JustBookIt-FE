@@ -1,23 +1,34 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function PaymentCancelScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId?: string | string[] }>();
+
   const resolvedBookingId = useMemo(
     () => (Array.isArray(bookingId) ? bookingId[0] : bookingId)?.trim() ?? '',
     [bookingId]
   );
 
   useEffect(() => {
+  if (Platform.OS === 'web' && resolvedBookingId) {
+    window.location.href =
+      `ticketbookingsystemfe://?bookingId=${resolvedBookingId}&paymentReturn=cancel`;
+    return;
+  }
+
+  const timer = setTimeout(() => {
     router.replace({
       pathname: '/',
       params: resolvedBookingId
         ? { paymentReturn: 'cancel', bookingId: resolvedBookingId }
         : { paymentReturn: 'cancel' },
     });
-  }, [resolvedBookingId]);
+  }, 0);
+
+  return () => clearTimeout(timer);
+}, [resolvedBookingId]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
