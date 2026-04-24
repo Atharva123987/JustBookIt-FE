@@ -240,6 +240,10 @@ export default function HomeScreen() {
     overrides?: Partial<AIQueryRequest>,
     userVisibleMessage?: string
   ) => {
+    if (!isHydrated || !deviceId) {
+      console.log("Chat not ready yet");
+      return;
+    }
     const trimmedQuery = query.trim();
 
     if (!trimmedQuery || isSending) {
@@ -555,26 +559,20 @@ export default function HomeScreen() {
   }, [isProcessingPaymentReturn, isSending, messages]);
 
   useEffect(() => {
-    if (!isHydrated) {
-      return;
-    }
+    if (!isHydrated) return;
+
+    if (!resolvedPaymentReturn) return;
+
+    if (paymentReturnHandledRef.current) return;
+
+    paymentReturnHandledRef.current = resolvedPaymentReturn;
 
     if (resolvedPaymentReturn === 'cancel') {
       router.replace('/');
       return;
     }
 
-    if (resolvedPaymentReturn !== 'success' || !resolvedPaymentReturnBookingId) {
-      return;
-    }
-
-    const handledKey = `${resolvedPaymentReturn}:${resolvedPaymentReturnBookingId}`;
-
-    if (paymentReturnHandledRef.current === handledKey) {
-      return;
-    }
-
-    paymentReturnHandledRef.current = handledKey;
+    if (resolvedPaymentReturn !== 'success') return;
 
     let isMounted = true;
 
@@ -594,36 +592,19 @@ export default function HomeScreen() {
           deviceId: resolvedDeviceId,
         });
 
-        if (!isMounted) {
-          return;
-        }
+        if (!isMounted) return;
 
         appendAssistantResponse(response);
-        setChatContext((currentContext) => ({
-          ...currentContext,
-          bookingId: resolvedPaymentReturnBookingId,
+
+        setChatContext((prev) => ({
+          ...prev,
+          bookingId: resolvedPaymentReturnBookingId as string,
         }));
       } catch (error) {
-        if (!isMounted) {
-          return;
-        }
-
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unable to refresh the booking after payment.';
-
-        setMessages((currentMessages) => [
-          ...currentMessages,
-          {
-            id: `assistant-payment-return-error-${Date.now()}`,
-            role: 'assistant',
-            text: 'Payment completed, but we could not refresh your booking yet.',
-          },
-        ]);
-        Alert.alert('Booking Fetch Error', errorMessage);
+        console.log(error);
       } finally {
         if (isMounted) {
           setIsProcessingPaymentReturn(false);
-          router.replace('/');
         }
       }
     };
@@ -633,7 +614,7 @@ export default function HomeScreen() {
     return () => {
       isMounted = false;
     };
-  }, [deviceId, isHydrated, resolvedPaymentReturn, resolvedPaymentReturnBookingId]);
+  }, [isHydrated, resolvedPaymentReturn, resolvedPaymentReturnBookingId]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -779,8 +760,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...(IS_WEB
       ? {
-          alignItems: 'center',
-        }
+        alignItems: 'center',
+      }
       : null),
   },
   content: {
@@ -788,17 +769,17 @@ const styles = StyleSheet.create({
     width: '100%',
     ...(IS_WEB
       ? {
-          maxWidth: 900,
-        }
+        maxWidth: 900,
+      }
       : null),
   },
   contentContainer: {
     paddingHorizontal: 20,
     ...(IS_WEB
       ? {
-          paddingHorizontal: 32,
-          paddingTop: 12,
-        }
+        paddingHorizontal: 32,
+        paddingTop: 12,
+      }
       : null),
   },
   logo: {
@@ -808,10 +789,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
     ...(IS_WEB
       ? {
-          width: 220,
-          height: 116,
-          marginTop: 8,
-        }
+        width: 220,
+        height: 116,
+        marginTop: 8,
+      }
       : null),
   },
   heroSection: {
@@ -821,10 +802,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     ...(IS_WEB
       ? {
-          marginTop: 48,
-          alignItems: 'center',
-          gap: 32,
-        }
+        marginTop: 48,
+        alignItems: 'center',
+        gap: 32,
+      }
       : null),
   },
   heroTitle: {
@@ -836,10 +817,10 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
     ...(IS_WEB
       ? {
-          width: 420,
-          fontSize: 56,
-          lineHeight: 68,
-        }
+        width: 420,
+        fontSize: 56,
+        lineHeight: 68,
+      }
       : null),
   },
   popcorn: {
@@ -850,19 +831,19 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '17deg' }],
     ...(IS_WEB
       ? {
-          width: 180,
-          height: 204,
-          marginRight: 0,
-        }
+        width: 180,
+        height: 204,
+        marginRight: 0,
+      }
       : null),
   },
   trySection: {
     marginTop: 112,
     ...(IS_WEB
       ? {
-          marginTop: 72,
-          maxWidth: 760,
-        }
+        marginTop: 72,
+        maxWidth: 760,
+      }
       : null),
   },
   sectionTitle: {
@@ -881,12 +862,12 @@ const styles = StyleSheet.create({
     gap: 18,
     ...(IS_WEB
       ? {
-          maxWidth: 880,
-          alignSelf: 'center',
-          width: '100%',
-          paddingTop: 20,
-          paddingBottom: 24,
-        }
+        maxWidth: 880,
+        alignSelf: 'center',
+        width: '100%',
+        paddingTop: 20,
+        paddingBottom: 24,
+      }
       : null),
   },
   messageBlock: {
@@ -901,10 +882,10 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     ...(IS_WEB
       ? {
-          width: '100%',
-          paddingHorizontal: 32,
-          alignItems: 'center',
-        }
+        width: '100%',
+        paddingHorizontal: 32,
+        alignItems: 'center',
+      }
       : null),
   },
   suggestionTray: {
@@ -944,15 +925,15 @@ const styles = StyleSheet.create({
     paddingRight: 12,
     ...(IS_WEB
       ? {
-          maxWidth: 880,
-          alignSelf: 'center',
-          width: '100%',
-          minHeight: 56,
-          borderRadius: 28,
-          outlineWidth: 0,
-          outlineColor: 'transparent',
-          boxShadow: 'none',
-        }
+        maxWidth: 880,
+        alignSelf: 'center',
+        width: '100%',
+        minHeight: 56,
+        borderRadius: 28,
+        outlineWidth: 0,
+        outlineColor: 'transparent',
+        boxShadow: 'none',
+      }
       : null),
   },
   input: {
@@ -965,11 +946,11 @@ const styles = StyleSheet.create({
     paddingRight: 12,
     ...(IS_WEB
       ? {
-          outlineWidth: 0,
-          outlineColor: 'transparent',
-          boxShadow: 'none',
-          borderWidth: 0,
-        }
+        outlineWidth: 0,
+        outlineColor: 'transparent',
+        boxShadow: 'none',
+        borderWidth: 0,
+      }
       : null),
   },
   submitButton: {
