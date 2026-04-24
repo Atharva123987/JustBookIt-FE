@@ -1,7 +1,8 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
 export default function PaymentSuccessScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId?: string | string[] }>();
 
@@ -10,33 +11,52 @@ export default function PaymentSuccessScreen() {
     [bookingId]
   );
 
-useEffect(() => {
-  if (Platform.OS === 'web' && resolvedBookingId) {
-    window.location.href =
-      `ticketbookingsystemfe://?bookingId=${resolvedBookingId}&paymentReturn=success`;
-    return;
-  }
+  useEffect(() => {
+    // ⏱️ Show screen for 3 seconds FIRST
+    const timer = setTimeout(() => {
+      if (Platform.OS === 'web') {
+        // Try opening app
+        if (resolvedBookingId) {
+          window.location.href =
+            `ticketbookingsystemfe://?bookingId=${resolvedBookingId}&paymentReturn=success`;
+        }
 
-  const timer = setTimeout(() => {
-    router.replace({
-      pathname: '/',
-      params: resolvedBookingId
-        ? { paymentReturn: 'success', bookingId: resolvedBookingId }
-        : { paymentReturn: 'success' },
-    });
-  }, 0); // 👈 key fix
+        // Fallback to chat after attempt
+        setTimeout(() => {
+          router.replace({
+            pathname: '/',
+            params: {
+              bookingId: resolvedBookingId,
+              fromPayment: 'true',
+            },
+          });
+        }, 1500);
+      } else {
+        // Native
+        router.replace({
+          pathname: '/',
+          params: {
+            bookingId: resolvedBookingId,
+            fromPayment: 'true',
+          },
+        });
+      }
+    }, 3000);
 
-  return () => clearTimeout(timer);
-}, [resolvedBookingId]);
+    return () => clearTimeout(timer);
+  }, [resolvedBookingId]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.content}>
+        <Text style={styles.title}>Payment Successful 🎉</Text>
+        <Text style={styles.subtitle}>Redirecting to your booking...</Text>
         <ActivityIndicator color="#FFFFFF" />
       </View>
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -46,5 +66,15 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  title: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    marginBottom: 10,
+  },
+  subtitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    marginBottom: 20,
   },
 });

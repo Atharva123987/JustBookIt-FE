@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function PaymentCancelScreen() {
@@ -12,27 +12,32 @@ export default function PaymentCancelScreen() {
   );
 
   useEffect(() => {
-  if (Platform.OS === 'web' && resolvedBookingId) {
-    window.location.href =
-      `ticketbookingsystemfe://?bookingId=${resolvedBookingId}&paymentReturn=cancel`;
-    return;
-  }
+    const timer = setTimeout(() => {
+      if (Platform.OS === 'web') {
+        // Try opening app (optional)
+        if (resolvedBookingId) {
+          window.location.href =
+            `ticketbookingsystemfe://?bookingId=${resolvedBookingId}&paymentReturn=cancel`;
+        }
 
-  const timer = setTimeout(() => {
-    router.replace({
-      pathname: '/',
-      params: resolvedBookingId
-        ? { paymentReturn: 'cancel', bookingId: resolvedBookingId }
-        : { paymentReturn: 'cancel' },
-    });
-  }, 0);
+        // Fallback → go to chat
+        setTimeout(() => {
+          router.replace('/');
+        }, 1200);
+      } else {
+        // Native app
+        router.replace('/');
+      }
+    }, 3000);
 
-  return () => clearTimeout(timer);
-}, [resolvedBookingId]);
+    return () => clearTimeout(timer);
+  }, [resolvedBookingId]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.content}>
+        <Text style={styles.title}>Payment Cancelled ❌</Text>
+        <Text style={styles.subtitle}>Your booking was not completed.</Text>
         <ActivityIndicator color="#FFFFFF" />
       </View>
     </SafeAreaView>
@@ -48,5 +53,15 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  title: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    marginBottom: 10,
+  },
+  subtitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    marginBottom: 20,
   },
 });
