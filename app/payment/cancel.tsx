@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function PaymentCancelScreen() {
@@ -13,22 +13,14 @@ export default function PaymentCancelScreen() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (Platform.OS === 'web') {
-        // Try opening app (optional)
-        if (resolvedBookingId) {
-          window.location.href =
-            `ticketbookingsystemfe://?bookingId=${resolvedBookingId}&paymentReturn=cancel`;
-        }
-
-        // Fallback → go to chat
-        setTimeout(() => {
-          router.replace('/');
-        }, 1200);
-      } else {
-        // Native app
-        router.replace('/');
-      }
-    }, 3000);
+      router.replace({
+        pathname: '/',
+        params: {
+          bookingId: resolvedBookingId,
+          paymentReturn: 'cancel',
+        },
+      });
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, [resolvedBookingId]);
@@ -36,7 +28,7 @@ export default function PaymentCancelScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.content}>
-        <Text style={styles.title}>Payment Cancelled ❌</Text>
+        <Text style={styles.title}>Payment Cancelled</Text>
         <Text style={styles.subtitle}>Your booking was not completed.</Text>
         <ActivityIndicator color="#FFFFFF" />
       </View>

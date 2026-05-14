@@ -10,38 +10,18 @@ export default function PaymentSuccessScreen() {
     () => (Array.isArray(bookingId) ? bookingId[0] : bookingId)?.trim() ?? '',
     [bookingId]
   );
-console.log("SUCCESS SCREEN LOADED");
-  useEffect(() => {
-    // ⏱️ Show screen for 3 seconds FIRST
-    const timer = setTimeout(() => {
-      if (Platform.OS === 'web') {
-        // Try opening app
-        if (resolvedBookingId) {
-          window.location.href =
-            `ticketbookingsystemfe://?bookingId=${resolvedBookingId}&paymentReturn=success`;
-        }
 
-        // Fallback to chat after attempt
-        setTimeout(() => {
-          router.replace({
-            pathname: '/',
-            params: {
-              bookingId: resolvedBookingId,
-              fromPayment: 'true',
-            },
-          });
-        }, 1500);
-      } else {
-        // Native
-        router.replace({
-          pathname: '/',
-          params: {
-            bookingId: resolvedBookingId,
-            fromPayment: 'true',
-          },
-        });
-      }
-    }, 3000);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      router.replace({
+        pathname: '/',
+        params: {
+          bookingId: resolvedBookingId,
+          paymentReturn: 'success',
+          paymentSource: Platform.OS,
+        },
+      });
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, [resolvedBookingId]);
@@ -49,7 +29,7 @@ console.log("SUCCESS SCREEN LOADED");
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.content}>
-        <Text style={styles.title}>Payment Successful 🎉</Text>
+        <Text style={styles.title}>Payment Successful</Text>
         <Text style={styles.subtitle}>Redirecting to your booking...</Text>
         <ActivityIndicator color="#FFFFFF" />
       </View>

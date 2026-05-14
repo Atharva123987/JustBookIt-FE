@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -34,6 +34,7 @@ import { getOrCreateDeviceId, loadPersistedChatState, persistChatState } from '@
 const BRAND_LOGO_IMAGE = require('../../assets/images/brand-logo.png');
 const POPCORN_IMAGE = require('../../assets/images/popcorn.png');
 const IS_WEB = Platform.OS === 'web';
+const PAYMENT_STATUS_RECHECK_DELAY_MS = 2500;
 
 function resetLaunchSensitiveChatContext(chatContext: ChatContext): ChatContext {
   return {
@@ -557,11 +558,16 @@ export default function HomeScreen() {
   useCallback(() => {
     if (!isHydrated) return;
     if (resolvedPaymentReturn !== 'success') return;
-    if (paymentReturnHandledRef.current) return;
+    if (!resolvedPaymentReturnBookingId) return;
 
-    paymentReturnHandledRef.current = resolvedPaymentReturn;
+    const handledKey = `${resolvedPaymentReturn}:${resolvedPaymentReturnBookingId}`;
+
+    if (paymentReturnHandledRef.current === handledKey) return;
+
+    paymentReturnHandledRef.current = handledKey;
 
     let isMounted = true;
+    let delayTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const fetchReturnedBooking = async () => {
       setIsProcessingPaymentReturn(true);
@@ -573,6 +579,12 @@ export default function HomeScreen() {
         if (!deviceId && isMounted) {
           setDeviceId(resolvedDeviceId);
         }
+
+        await new Promise<void>((resolve) => {
+          delayTimeoutId = setTimeout(() => resolve(), PAYMENT_STATUS_RECHECK_DELAY_MS);
+        });
+
+        if (!isMounted) return;
 
         const response = await queryAI({
           q: 'get my booking',
@@ -593,6 +605,7 @@ export default function HomeScreen() {
       } finally {
         if (isMounted) {
           setIsProcessingPaymentReturn(false);
+          router.replace('/');
         }
       }
     };
@@ -601,6 +614,9 @@ export default function HomeScreen() {
 
     return () => {
       isMounted = false;
+      if (delayTimeoutId) {
+        clearTimeout(delayTimeoutId);
+      }
     };
   }, [
     isHydrated,
