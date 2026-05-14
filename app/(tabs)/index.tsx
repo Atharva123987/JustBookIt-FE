@@ -1,8 +1,8 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -458,11 +458,6 @@ export default function HomeScreen() {
       await Linking.openURL(booking.payment_link);
     }
 
-    await sendQuery(
-      'get my booking',
-      { bookingId: booking.booking_id, showId: booking.show_id },
-      'Get my booking'
-    );
   };
 
   useEffect(() => {
@@ -558,21 +553,13 @@ export default function HomeScreen() {
     }
   }, [isProcessingPaymentReturn, isSending, messages]);
 
-  useEffect(() => {
+ useFocusEffect(
+  useCallback(() => {
     if (!isHydrated) return;
-
-    if (!resolvedPaymentReturn) return;
-
+    if (resolvedPaymentReturn !== 'success') return;
     if (paymentReturnHandledRef.current) return;
 
     paymentReturnHandledRef.current = resolvedPaymentReturn;
-
-    if (resolvedPaymentReturn === 'cancel') {
-      router.replace('/');
-      return;
-    }
-
-    if (resolvedPaymentReturn !== 'success') return;
 
     let isMounted = true;
 
@@ -580,7 +567,8 @@ export default function HomeScreen() {
       setIsProcessingPaymentReturn(true);
 
       try {
-        const resolvedDeviceId = deviceId ?? (await getOrCreateDeviceId());
+        const resolvedDeviceId =
+          deviceId ?? (await getOrCreateDeviceId());
 
         if (!deviceId && isMounted) {
           setDeviceId(resolvedDeviceId);
@@ -614,8 +602,13 @@ export default function HomeScreen() {
     return () => {
       isMounted = false;
     };
-  }, [isHydrated, resolvedPaymentReturn, resolvedPaymentReturnBookingId]);
-
+  }, [
+    isHydrated,
+    resolvedPaymentReturn,
+    resolvedPaymentReturnBookingId,
+    deviceId
+  ])
+);
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar style="light" />
