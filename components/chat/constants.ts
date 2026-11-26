@@ -1,14 +1,14 @@
 export const QUICK_PROMPTS = [
   "Show me all movies near me.",
   "Show me Batman shows near me.",
-  "Can you show me a mafia crime family movie?",
+  "Can you show me a movie about dreaming and subconsciousness?",
 ];
 
 export const PROMPTS_BY_INTENT: Record<string, string[]> = {
   default: [
     "Show me all movies near me.",
     "Show me Batman shows near me.",
-    "Can you show me a mafia crime family movie?",
+    "Can you show me a movie about dreaming and subconsciousness?",
   ],
   search_all_movies: ["Check shows for a movie"],
   movie_show_timetable: ["Book this movie", "Check seat availability"],
