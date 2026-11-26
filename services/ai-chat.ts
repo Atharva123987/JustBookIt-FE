@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 
 const AUTH_TOKEN = 'test';
 const DEFAULT_PORT = '3000';
-const LOCALHOST_BASE_URL = `https://localhost:${DEFAULT_PORT}`;
+const LOCALHOST_BASE_URL = `http://localhost:${DEFAULT_PORT}`;
 const REQUEST_TIMEOUT_MS = 45000;
 
 export type AIIntent =
@@ -419,8 +419,16 @@ function extractHostCandidate(value?: string | null) {
 }
 
 function resolveApiBaseUrl() {
-const configuredBaseUrl = Constants.expoConfig?.extra?.apiUrl;
-  if (configuredBaseUrl) {
+  // Explicit override, e.g. EXPO_PUBLIC_API_URL=http://192.168.1.5:3000 in .env.local
+  const envBaseUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (envBaseUrl) {
+    return envBaseUrl.replace(/\/$/, '');
+  }
+
+  // Production builds use the deployed AI layer from app.json. In development,
+  // skip it and talk to the AI layer running on this machine (detected below).
+  const configuredBaseUrl = Constants.expoConfig?.extra?.apiUrl;
+  if (configuredBaseUrl && !__DEV__) {
     return configuredBaseUrl.replace(/\/$/, '');
   }
 
