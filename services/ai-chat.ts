@@ -333,15 +333,18 @@ type RawAIQueryResponse =
     intent: 'movie_show_timetable';
     chat_response: string;
     api_data: {
-      movie_details: {
-        data: {
-          movie: RawMovieDetails;
-        };
-      };
-      show_timings: {
+      movie_details?: {
+        data?: {
+          movie?: RawMovieDetails | null;
+        } | null;
+      } | null;
+      show_timings?: {
         data: RawShowVenue[] | null;
         error?: string | null;
-      };
+      } | null;
+      // Error payloads from the AI layer, e.g. { data: null, error: "no shows found ..." }
+      data?: unknown;
+      error?: string | null;
     };
   }
   | {
@@ -654,8 +657,8 @@ function normalizeAIResponse(response: RawAIQueryResponse): AIQueryResponse {
             },
           },
           show_timings: {
-            data: (response.api_data.show_timings.data ?? []).map(normalizeShowVenue),
-            error: response.api_data.show_timings.error ?? null,
+            data: (response.api_data.show_timings?.data ?? []).map(normalizeShowVenue),
+            error: response.api_data.show_timings?.error ?? response.api_data.error ?? null,
           },
         },
       };

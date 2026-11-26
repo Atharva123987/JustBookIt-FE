@@ -189,7 +189,10 @@ export default function HomeScreen() {
 
     setMessages((currentMessages) => [...currentMessages, assistantMessage]);
 
-    if (response.intent === 'movie_show_timetable') {
+    if (
+      response.intent === 'movie_show_timetable' &&
+      response.api_data.movie_details.data.movie.id !== 'unknown-movie'
+    ) {
       setChatContext((currentContext) => ({
         ...currentContext,
         selectedMovieId: response.api_data.movie_details.data.movie.id,

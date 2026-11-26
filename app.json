@@ -12,9 +12,7 @@
       "supportsTablet": true
     },
     "android": {
-      "permissions": [
-        "INTERNET"
-      ],
+      "permissions": ["INTERNET"],
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
